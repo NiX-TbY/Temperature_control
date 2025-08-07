@@ -224,7 +224,7 @@ float TemperatureController::calculatePID(float error) {
     _pidIntegral += error;
     
     // Prevent integral windup
-    _pidIntegral = constrain(_pidIntegral, -100, 100);
+    _pidIntegral = constrain(_pidIntegral, -100.0f, 100.0f);
     
     float output = (_kp * error) + (_ki * _pidIntegral) + (_kd * derivative);
     

@@ -12,6 +12,9 @@
 #define MIN_TEMP -40.0
 #define MAX_TEMP 80.0
 
+// Control parameters
+#define TEMP_HYSTERESIS_C 2.0
+
 // Control timing
 #define TEMP_UPDATE_INTERVAL 1000  // ms
 
