@@ -1,0 +1,24 @@
+name: Test PlatformIO Setup
+on:
+  workflow_dispatch:
+
+jobs:
+  test-platformio:
+    runs-on: ubuntu-22.04-4core
+    environment: copilot
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test PlatformIO access
+        run: |
+          echo "Testing PlatformIO registry access..."
+          curl -I https://api.registry.platformio.org/
+          curl -I https://api.registry.nm1.platformio.org/
+          curl -I https://collector.platformio.org/
+          
+      - name: Install and test PlatformIO
+        run: |
+          python -m pip install platformio
+          cd my-arduino-project
+          pio run --target checkprogsize

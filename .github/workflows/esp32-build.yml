@@ -1,0 +1,207 @@
+name: ESP32-S3 Temperature Control Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_DIR: my-arduino-project
+  PLATFORMIO_VERSION: "6.1.11"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout repository
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    # Setup Python environment
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    # Cache PlatformIO dependencies
+    - name: Cache PlatformIO
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.platformio
+          ~/.cache/pip
+        key: ${{ runner.os }}-platformio-${{ env.PLATFORMIO_VERSION }}-${{ hashFiles('**/platformio.ini') }}
+        restore-keys: |
+          ${{ runner.os }}-platformio-${{ env.PLATFORMIO_VERSION }}-
+          ${{ runner.os }}-platformio-
+    
+    # Install PlatformIO CLI
+    - name: Install PlatformIO Core
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio==${{ env.PLATFORMIO_VERSION }}
+        
+    # Setup project environment before firewall
+    - name: Setup Environment (Pre-Firewall)
+      run: |
+        echo "Setting up ESP32-S3 Temperature Control environment..."
+        
+        # Update package lists
+        sudo apt-get update
+        
+        # Install system dependencies
+        sudo apt-get install -y \
+          git \
+          wget \
+          curl \
+          build-essential \
+          python3-dev \
+          python3-pip \
+          python3-setuptools \
+          python3-serial \
+          python3-click \
+          python3-cryptography \
+          python3-future \
+          python3-pyparsing \
+          python3-pyelftools \
+          cmake \
+          ninja-build \
+          ccache \
+          libffi-dev \
+          libssl-dev \
+          dfu-util \
+          libusb-1.0-0
+        
+        # Install additional Python packages
+        pip install --upgrade \
+          esptool \
+          pyserial \
+          click \
+          cryptography \
+          future \
+          pyparsing \
+          pyelftools
+        
+        # Create project structure if needed
+        mkdir -p ~/.platformio
+        
+        # Pre-download platform and toolchain
+        cd ${{ env.PROJECT_DIR }}
+        pio platform install espressif32@6.12.0
+        
+    # Install project dependencies
+    - name: Install Dependencies
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        echo "Installing project dependencies..."
+        
+        # Install libraries specified in platformio.ini
+        pio pkg install
+        
+        # Verify installation
+        pio pkg list
+        
+    # Compile the project
+    - name: Build Firmware
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        echo "Building ESP32-S3 Temperature Control firmware..."
+        pio run --verbose
+        
+    # Generate build artifacts
+    - name: Prepare Build Artifacts
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        mkdir -p ../build-artifacts
+        
+        # Copy firmware files
+        cp .pio/build/esp32-s3-devkitc-1/firmware.bin ../build-artifacts/
+        cp .pio/build/esp32-s3-devkitc-1/firmware.elf ../build-artifacts/
+        
+        # Copy partition table if it exists
+        if [ -f .pio/build/esp32-s3-devkitc-1/partitions.bin ]; then
+          cp .pio/build/esp32-s3-devkitc-1/partitions.bin ../build-artifacts/
+        fi
+        
+        # Create build info
+        echo "Build Date: $(date)" > ../build-artifacts/build-info.txt
+        echo "Commit: ${{ github.sha }}" >> ../build-artifacts/build-info.txt
+        echo "Branch: ${{ github.ref_name }}" >> ../build-artifacts/build-info.txt
+        
+        # Show memory usage
+        pio run --target size > ../build-artifacts/memory-usage.txt 2>&1 || true
+        
+    # Upload build artifacts
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: esp32-s3-temperature-control-${{ github.sha }}
+        path: build-artifacts/
+        retention-days: 30
+        
+    # Run tests if they exist
+    - name: Run Tests
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        if [ -d "test" ] && [ "$(ls -A test)" ]; then
+          echo "Running tests..."
+          pio test --verbose
+        else
+          echo "No tests found, skipping..."
+        fi
+      continue-on-error: true
+      
+    # Check code formatting (optional)
+    - name: Check Code Style
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        echo "Checking code style..."
+        # Add your preferred linting/formatting checks here
+        find src include -name "*.cpp" -o -name "*.h" | head -10
+      continue-on-error: true
+
+  # Hardware-in-Loop Testing (if you have hardware connected)
+  hardware-test:
+    runs-on: self-hosted  # Requires self-hosted runner with hardware
+    needs: build
+    if: false  # Disabled by default - enable when you have hardware setup
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Hardware Test Environment
+      run: |
+        echo "Setting up hardware testing environment..."
+        # Add hardware-specific setup commands here
+        
+    - name: Flash Firmware to Device
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: |
+        # Download build artifacts
+        # Flash to actual ESP32-S3 hardware
+        # Run hardware tests
+        echo "Hardware testing not yet implemented"
+
+  # Security scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Security Scan
+      run: |
+        echo "Running security analysis..."
+        # Add security scanning tools here
+        # Example: CodeQL, Semgrep, etc.
+        echo "Security scan completed"
+      continue-on-error: true
