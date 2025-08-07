@@ -28,7 +28,7 @@ SemaphoreHandle_t dataMutex = nullptr;
 // System data shared between tasks
 SystemData systemData;
 
-// Global objects
+// Global objects - definitions for extern declarations
 TemperatureController controller;
 TemperatureSensor tempSensor;
 DisplayDriver display;
@@ -228,8 +228,6 @@ void sensorTask(void *pvParameters) {
         }
         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
     }
 }
 
