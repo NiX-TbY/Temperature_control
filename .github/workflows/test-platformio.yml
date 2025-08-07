@@ -4,7 +4,7 @@ on:
 
 jobs:
   test-platformio:
-    runs-on: ubuntu-22.04-4core
+    runs-on: ubuntu-latest
     environment: copilot
     steps:
       - name: Checkout
