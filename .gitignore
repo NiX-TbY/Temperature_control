@@ -1,34 +1,64 @@
-# Gradle files
-.gradle/
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.piohome/
+
+# IDE files
+.vscode/
+*.sublime*
+.idea/
+*.swp
+*.swo
+
+# Operating System files
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Build artifacts
 build/
+dist/
+*.bin
+*.elf
+*.hex
+*.map
+*.lst
 
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
+# Logs and debug files
 *.log
+debug.log
+serial_monitor.log
 
-# Android Studio generated files and folders
+# Temporary files
+temp/
+tmp/
+*.bak
+*~
+
+# Archive files that might be created during development
+*.zip
+*.tar.gz
+*.rar
+
+# Keep documentation but ignore temporary doc files
+*.docx~
+*.pdf~
+
+# Original Android/Gradle files (legacy)
+.gradle/
+local.properties
 captures/
 .externalNativeBuild/
 .cxx/
 *.aab
 *.apk
 output-metadata.json
-
-# IntelliJ
 *.iml
-.idea/
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
-
-# Keystore files
 *.jks
 *.keystore
-
-# Google Services (e.g. APIs or Firebase)
 google-services.json
-
-# Android Profiling
 *.hprof
