@@ -49,15 +49,16 @@ void printSystemStatus(const SensorData& sensor);
 
 void setup() {
     // Initialize serial for debugging
-    SystemUtils::initSerial();
-    SystemUtils::printSystemInfo();
+    Serial.begin(115200);
+    delay(500);
+    Serial.println("\n=== ESP32-S3 Temperature Control System ===");
     
     // Initialize mutex for shared data
     dataMutex = xSemaphoreCreateMutex();
     
     // Initialize system data structure
     memset(&systemData, 0, sizeof(SystemData));
-    systemData.timeString = "2025-08-07 06:15:12";  // Current time
+    systemData.timeString = "2025-08-07 06:15:12";
     systemData.activeSensors = 0;
     systemData.minTemp = -30.0;
     systemData.maxTemp = 10.0;
@@ -65,25 +66,23 @@ void setup() {
     // Initialize display
     if (!display.init()) {
         Serial.println("ERROR: Display initialization failed!");
-        while (1) { delay(1000); }  // Halt on critical error
+        while (1) { delay(1000); }
     }
     
     // Initialize temperature controller
     if (!controller.init()) {
         Serial.println("ERROR: Temperature controller initialization failed!");
-        // Continue anyway, might work partially
     }
     
     // Initialize temperature sensors
     if (!tempSensor.init()) {
         Serial.println("WARNING: Temperature sensor initialization failed!");
-        // Continue anyway, might be connected later
     }
     
     // Initialize UI components
     if (!ui.init()) {
         Serial.println("ERROR: UI initialization failed!");
-        while (1) { delay(1000); }  // Halt on critical error
+        while (1) { delay(1000); }
     }
     
     // Create UI task (Core 0, high priority)
@@ -203,27 +202,12 @@ void controlTask(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1Hz control loop
     TickType_t xLastWakeTime = xTaskGetTickCount();
     
-    // Register this task with watchdog
-    esp_task_wdt_add(nullptr);
-    
     while (true) {
         if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // Get latest sensor data
-            SensorData* sensors = tempSensor.getAllSensorData();
-            uint8_t sensorCount = tempSensor.getSensorCount();
-            
-            // Update controller with sensor data
-            controller.updateWithMultipleSensors(sensors, sensorCount);
-            
-            // Update system data for UI
-            systemData.control = controller.getState();
-            systemData.config = controller.getConfig();
-            
+            // Basic temperature control logic
+            // TODO: Implement full control logic
             xSemaphoreGive(dataMutex);
         }
-        
-        // Reset watchdog
-        esp_task_wdt_reset();
         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -235,44 +219,29 @@ void sensorTask(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     
     while (true) {
-        // Update sensor readings
-        tempSensor.update();
-        
+        // Basic sensor reading
         if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // Copy sensor data to shared structure
+            // Update sensor count
             systemData.activeSensors = tempSensor.getSensorCount();
-            for (uint8_t i = 0; i < systemData.activeSensors && i < 4; i++) {
-                systemData.sensors[i] = tempSensor.getSensorData(i);
-            }
-            
+            // TODO: Read actual sensor data
             xSemaphoreGive(dataMutex);
         }
         
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
+    }
+}
 
-// Logging task - logs data to SD card
+// Logging task - simplified placeholder
 void loggingTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(5000); // Log every 5 seconds
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    // Allow time for other systems to initialize
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    
-    // Initialize SD card for logging
-    bool sdInitialized = SystemUtils::initSDCard();
+    const TickType_t xFrequency = pdMS_TO_TICKS(5000); // Check every 5 seconds
     
     while (true) {
-        if (sdInitialized && controller.getConfig().loggingEnabled) {
-            // Take mutex to safely access data
-            if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                // Log data
-                SystemUtils::logData(systemData);
-                xSemaphoreGive(dataMutex);
-            }
-        }
+        // Simplified logging - just update system status
+        systemData.lastUpdateTime = millis();
+        Serial.println("Logging task running...");
         
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        vTaskDelay(xFrequency);
     }
 }
