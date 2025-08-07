@@ -51,6 +51,7 @@ jobs:
         with:
           name: build-logs
           path: |
-            my-arduino-project/.pio/build/**/*.log
-            my-arduino-project/.pio/build/**/firmware.*
+            my-arduino-project/.pio/build/
+            my-arduino-project/.pio/libdeps/
           retention-days: 7
+          if-no-files-found: ignore
