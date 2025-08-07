@@ -28,12 +28,6 @@ SemaphoreHandle_t dataMutex = nullptr;
 // System data shared between tasks
 SystemData systemData;
 
-// Global objects - definitions for extern declarations
-TemperatureController controller;
-TemperatureSensor tempSensor;
-DisplayDriver display;
-UIScreens ui;
-
 // Task functions
 void displayTask(void *pvParameters);
 void touchTask(void *pvParameters);
