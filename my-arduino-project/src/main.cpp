@@ -1,201 +1,272 @@
 #include <Arduino.h>
-#include <WiFi.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <lvgl.h>
+
 #include "config/config.h"
 #include "types/types.h"
-#include "display/display_driver.h"
-#include "sensors/temperature_sensor.h"
 #include "controllers/temperature_controller.h"
+#include "sensors/temperature_sensor.h"
+#include "display/display_driver.h"
+#include "display/ui_screens.h"
+#include "utils/system_utils.h"
 
-// Global variables
-unsigned long lastSystemUpdate = 0;
-bool systemInitialized = false;
+// Task handles
+TaskHandle_t displayTaskHandle = nullptr;
+TaskHandle_t touchTaskHandle = nullptr;
+TaskHandle_t lvglTaskHandle = nullptr;
+TaskHandle_t controlTaskHandle = nullptr;
+TaskHandle_t sensorTaskHandle = nullptr;
+TaskHandle_t loggingTaskHandle = nullptr;
 
-// Button callback functions
-void onHeatButtonPress();
-void onCoolButtonPress();
-void onAutoButtonPress();
-void onOffButtonPress();
-void onTempUpButtonPress();
-void onTempDownButtonPress();
-void onFanUpButtonPress();
-void onFanDownButtonPress();
+// Mutex for shared data access
+SemaphoreHandle_t dataMutex = nullptr;
+
+// System data shared between tasks
+SystemData systemData;
+
+// Task functions
+void displayTask(void *pvParameters);
+void touchTask(void *pvParameters);
+void lvglTask(void *pvParameters);
+void controlTask(void *pvParameters);
+void sensorTask(void *pvParameters);
+void loggingTask(void *pvParameters);
+
+// Function declarations
+void setupButtons();
+void initWiFi();
+void printSystemStatus(const SensorData& sensor);
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
+    // Initialize serial for debugging
+    SystemUtils::initSerial();
+    SystemUtils::printSystemInfo();
     
-    DEBUG_PRINTLN("=== Temperature Control System Starting ===");
-    DEBUG_PRINTLN("Hardware: ESP32-S3 with 4.3\" Waveshare Display");
+    // Initialize mutex for shared data
+    dataMutex = xSemaphoreCreateMutex();
     
-    // Initialize display first
+    // Initialize system data structure
+    memset(&systemData, 0, sizeof(SystemData));
+    systemData.timeString = "2025-08-07 06:15:12";  // Current time
+    systemData.activeSensors = 0;
+    systemData.minTemp = -30.0;
+    systemData.maxTemp = 10.0;
+    
+    // Initialize display
     if (!display.init()) {
-        DEBUG_PRINTLN("FATAL: Display initialization failed");
-        while(1) delay(1000);
+        Serial.println("ERROR: Display initialization failed!");
+        while (1) { delay(1000); }  // Halt on critical error
     }
     
-    // Show startup screen
-    display.clear();
-    auto tft = display.getTFT();
-    tft->setTextColor(TFT_WHITE);
-    tft->setTextSize(3);
-    tft->drawString("Initializing...", 250, 200);
-    tft->setTextSize(2);
-    tft->drawString("Temperature Control System", 220, 250);
-    
-    // Initialize temperature sensor
-    if (!tempSensor.init()) {
-        DEBUG_PRINTLN("WARNING: Temperature sensor initialization failed");
-        tft->setTextColor(TFT_RED);
-        tft->drawString("Sensor Error - Check Connections", 180, 300);
-    } else {
-        tft->setTextColor(TFT_GREEN);
-        tft->drawString("Sensor OK", 320, 300);
-    }
-    
-    delay(1000);
-    
-    // Initialize controller
+    // Initialize temperature controller
     if (!controller.init()) {
-        DEBUG_PRINTLN("FATAL: Controller initialization failed");
-        while(1) delay(1000);
+        Serial.println("ERROR: Temperature controller initialization failed!");
+        // Continue anyway, might work partially
     }
     
-    tft->setTextColor(TFT_GREEN);
-    tft->drawString("Controller OK", 300, 330);
-    delay(1000);
+    // Initialize temperature sensors
+    if (!tempSensor.init()) {
+        Serial.println("WARNING: Temperature sensor initialization failed!");
+        // Continue anyway, might be connected later
+    }
     
-    // Setup control buttons
-    setupButtons();
+    // Initialize UI components
+    if (!ui.init()) {
+        Serial.println("ERROR: UI initialization failed!");
+        while (1) { delay(1000); }  // Halt on critical error
+    }
     
-    // Initialize WiFi (optional)
-    initWiFi();
+    // Create UI task (Core 0, high priority)
+    xTaskCreatePinnedToCore(
+        displayTask,
+        "displayTask",
+        DISPLAY_TASK_STACK,
+        nullptr,
+        DISPLAY_TASK_PRIORITY,
+        &displayTaskHandle,
+        0
+    );
     
-    systemInitialized = true;
-    display.forceRedraw();
+    // Create touch task (Core 0, high priority)
+    xTaskCreatePinnedToCore(
+        touchTask,
+        "touchTask",
+        TOUCH_TASK_STACK,
+        nullptr,
+        TOUCH_TASK_PRIORITY,
+        &touchTaskHandle,
+        0
+    );
     
-    DEBUG_PRINTLN("=== System Initialization Complete ===");
+    // Create LVGL task (Core 0, high priority)
+    xTaskCreatePinnedToCore(
+        lvglTask,
+        "lvglTask",
+        LVGL_TASK_STACK,
+        nullptr,
+        LVGL_TASK_PRIORITY,
+        &lvglTaskHandle,
+        0
+    );
+    
+    // Create control task (Core 1, medium priority)
+    xTaskCreatePinnedToCore(
+        controlTask,
+        "controlTask",
+        CONTROL_TASK_STACK,
+        nullptr,
+        CONTROL_TASK_PRIORITY,
+        &controlTaskHandle,
+        1
+    );
+    
+    // Create sensor task (Core 1, medium priority)
+    xTaskCreatePinnedToCore(
+        sensorTask,
+        "sensorTask",
+        SENSOR_TASK_STACK,
+        nullptr,
+        SENSOR_TASK_PRIORITY,
+        &sensorTaskHandle,
+        1
+    );
+    
+    // Create logging task (Core 1, low priority)
+    xTaskCreatePinnedToCore(
+        loggingTask,
+        "loggingTask",
+        LOGGING_TASK_STACK,
+        nullptr,
+        LOGGING_TASK_PRIORITY,
+        &loggingTaskHandle,
+        1
+    );
+    
+    Serial.println("System initialization complete");
 }
 
 void loop() {
-    if (!systemInitialized) return;
-    
-    // Read sensors
-    tempSensor.readSensor();
-    SensorData sensorData = tempSensor.getData();
-    
-    // Update controller
-    controller.update(sensorData);
-    
-    // Handle touch input
-    TouchEvent touchEvent;
-    if (display.getTouch(touchEvent)) {
-        display.handleTouch(touchEvent);
-    }
-    
-    // Update display
-    display.drawMainScreen(sensorData, controller.getConfig(), controller.getState());
-    
-    // System status updates
-    if (millis() - lastSystemUpdate > 5000) {
-        printSystemStatus(sensorData);
-        lastSystemUpdate = millis();
-    }
-    
-    delay(50); // Main loop delay
+    // Arduino loop not used with FreeRTOS tasks
+    delay(1000);
 }
 
-void setupButtons() {
-    // Control mode buttons
-    display.addButton(50, 220, 100, 50, "HEAT", TFT_DARKRED, onHeatButtonPress);
-    display.addButton(170, 220, 100, 50, "COOL", TFT_DARKBLUE, onCoolButtonPress);
-    display.addButton(290, 220, 100, 50, "AUTO", TFT_DARKGREEN, onAutoButtonPress);
-    display.addButton(410, 220, 100, 50, "OFF", TFT_MAROON, onOffButtonPress);
+// Display task - handles display updates
+void displayTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(10);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
     
-    // Temperature adjustment buttons
-    display.addButton(650, 200, 60, 40, "T+", TFT_DARKGREY, onTempUpButtonPress);
-    display.addButton(650, 250, 60, 40, "T-", TFT_DARKGREY, onTempDownButtonPress);
-    
-    // Fan speed buttons
-    display.addButton(650, 320, 60, 40, "F+", TFT_DARKGREY, onFanUpButtonPress);
-    display.addButton(650, 370, 60, 40, "F-", TFT_DARKGREY, onFanDownButtonPress);
-}
-
-void initWiFi() {
-    DEBUG_PRINTLN("Initializing WiFi...");
-    
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname(HOSTNAME);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        DEBUG_PRINT(".");
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        DEBUG_PRINTLN("");
-        DEBUG_PRINTF("WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        DEBUG_PRINTLN("WiFi connection failed - continuing without network");
+    while (true) {
+        display.update();
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 
-void printSystemStatus(const SensorData& sensor) {
-    DEBUG_PRINTLN("=== System Status ===");
-    DEBUG_PRINTF("Temperature: %.1f°C\n", sensor.temperature);
-    DEBUG_PRINTF("Humidity: %.1f%%\n", sensor.humidity);
-    DEBUG_PRINTF("Target: %.1f°C\n", controller.getTargetTemperature());
-    DEBUG_PRINTF("Mode: %d\n", controller.getMode());
-    DEBUG_PRINTF("Status: %d\n", controller.getState().status);
-    DEBUG_PRINTF("Heap Free: %d bytes\n", ESP.getFreeHeap());
-    DEBUG_PRINTLN("===================");
+// Touch task - handles touch input
+void touchTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(20);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    while (true) {
+        // Touch handling is done in LVGL callbacks
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
 
-// Button callback implementations
-void onHeatButtonPress() {
-    DEBUG_PRINTLN("Heat button pressed");
-    controller.setMode(MODE_HEAT);
-    display.forceRedraw();
+// LVGL task - handles UI updates
+void lvglTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz UI refresh
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    while (true) {
+        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            // Update UI with latest system data
+            ui.update(systemData);
+            xSemaphoreGive(dataMutex);
+        }
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
 
-void onCoolButtonPress() {
-    DEBUG_PRINTLN("Cool button pressed");
-    controller.setMode(MODE_COOL);
-    display.forceRedraw();
+// Control task - implements temperature control logic
+void controlTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1Hz control loop
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    // Register this task with watchdog
+    esp_task_wdt_add(nullptr);
+    
+    while (true) {
+        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Get latest sensor data
+            SensorData* sensors = tempSensor.getAllSensorData();
+            uint8_t sensorCount = tempSensor.getSensorCount();
+            
+            // Update controller with sensor data
+            controller.updateWithMultipleSensors(sensors, sensorCount);
+            
+            // Update system data for UI
+            systemData.control = controller.getState();
+            systemData.config = controller.getConfig();
+            
+            xSemaphoreGive(dataMutex);
+        }
+        
+        // Reset watchdog
+        esp_task_wdt_reset();
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
 
-void onAutoButtonPress() {
-    DEBUG_PRINTLN("Auto button pressed");
-    controller.setMode(MODE_AUTO);
-    display.forceRedraw();
+// Sensor task - reads temperature sensors
+void sensorTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1Hz sensor reads
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    while (true) {
+        // Update sensor readings
+        tempSensor.update();
+        
+        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Copy sensor data to shared structure
+            systemData.activeSensors = tempSensor.getSensorCount();
+            for (uint8_t i = 0; i < systemData.activeSensors && i < 4; i++) {
+                systemData.sensors[i] = tempSensor.getSensorData(i);
+            }
+            
+            xSemaphoreGive(dataMutex);
+        }
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
 
-void onOffButtonPress() {
-    DEBUG_PRINTLN("Off button pressed");
-    controller.setMode(MODE_OFF);
-    display.forceRedraw();
-}
-
-void onTempUpButtonPress() {
-    float newTemp = controller.getTargetTemperature() + 0.5;
-    controller.setTargetTemperature(newTemp);
-    DEBUG_PRINTF("Target temperature increased to %.1f°C\n", newTemp);
-}
-
-void onTempDownButtonPress() {
-    float newTemp = controller.getTargetTemperature() - 0.5;
-    controller.setTargetTemperature(newTemp);
-    DEBUG_PRINTF("Target temperature decreased to %.1f°C\n", newTemp);
-}
-
-void onFanUpButtonPress() {
-    // Fan speed control implementation
-    DEBUG_PRINTLN("Fan speed up");
-}
-
-void onFanDownButtonPress() {
-    // Fan speed control implementation
-    DEBUG_PRINTLN("Fan speed down");
+// Logging task - logs data to SD card
+void loggingTask(void *pvParameters) {
+    const TickType_t xFrequency = pdMS_TO_TICKS(5000); // Log every 5 seconds
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    // Allow time for other systems to initialize
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    
+    // Initialize SD card for logging
+    bool sdInitialized = SystemUtils::initSDCard();
+    
+    while (true) {
+        if (sdInitialized && controller.getConfig().loggingEnabled) {
+            // Take mutex to safely access data
+            if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                // Log data
+                SystemUtils::logData(systemData);
+                xSemaphoreGive(dataMutex);
+            }
+        }
+        
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
 }
