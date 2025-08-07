@@ -1,57 +1,121 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// Display Configuration
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 480
-#define SCREEN_ROTATION 1
+#include <Arduino.h>
+#include <DHT.h>  // For DHT sensor type constants
 
-// Pin Definitions for Waveshare ESP32-S3 4.3" Type B
-#define TFT_BL 2
-#define TFT_RST 4
-#define TOUCH_INT 7
-#define TOUCH_RST 5
-#define TOUCH_SDA 6
-#define TOUCH_SCL 7
+// System Version
+#define SYSTEM_VERSION "1.0.0"
+#define BOARD_TYPE "Waveshare ESP32-S3-Touch-LCD-4.3B"
 
-// Sensor Pins
-#define DHT_PIN 15
-#define TEMP_SENSOR_PIN 16
-#define RELAY_HEAT_PIN 17
-#define RELAY_COOL_PIN 18
-#define FAN_PWM_PIN 19
-#define BUZZER_PIN 20
+// Display Configuration (Waveshare Type B specific)
+#define DISPLAY_WIDTH 800
+#define DISPLAY_HEIGHT 480
+#define DISPLAY_BL_PWM_CHANNEL 0
+#define DISPLAY_BL_PWM_FREQ 5000
+#define DISPLAY_BL_PWM_RESOLUTION 8
 
-// System Configuration
-#define DHT_TYPE DHT22
-#define TEMP_UPDATE_INTERVAL 1000
-#define DISPLAY_UPDATE_INTERVAL 500
-#define SENSOR_READ_INTERVAL 2000
+// I2C Configuration (Critical for Type B)
+#define I2C_SDA_PIN 8
+#define I2C_SCL_PIN 9
+#define I2C_FREQ 400000
 
-// Temperature Limits
-#define MIN_TEMP 5.0
-#define MAX_TEMP 40.0
-#define DEFAULT_TARGET_TEMP 22.0
-#define TEMP_TOLERANCE 0.5
+// I2C Device Addresses
+#define CH422G_ADDRESS 0x71    // I/O Expander (controls display reset & backlight)
+#define GT911_ADDRESS_1 0x5D    // Touch controller primary address
+#define GT911_ADDRESS_2 0x14    // Touch controller secondary address
+#define PCF85063_ADDRESS 0x51   // RTC
+
+// Touch Configuration
+#define TOUCH_IRQ_PIN 4
+#define TOUCH_MAX_POINTS 5
+
+// Temperature Sensor Configuration
+// Note: GPIO 15 is conflicted with display B7, using GPIO 33 instead
+#define DS18B20_PIN 33
+
+// DHT Sensor Configuration
+#define DHT_PIN 32              // DHT22 sensor pin
+#define DHT_TYPE DHT22          // DHT22 (AM2302)
+#define SENSOR_READ_INTERVAL 2000  // DHT read interval in ms
+
+// Display Constants
+#define DISPLAY_WIDTH 800
+#define DISPLAY_HEIGHT 480
+#define I2C_FREQ 400000
+
+// Debug settings
+#define DEBUG_MODE
+#define MAX_SENSORS 4
+#define TEMP_READ_INTERVAL 1000 // ms
+#define SENSOR_TIMEOUT 5000     // ms
+
+// Control Pins (using available GPIOs)
+#define RELAY_HEAT_PIN 34       // USER_GPIO_2
+#define RELAY_COOL_PIN 35       // USER_GPIO_3
+#define FAN_PWM_PIN 36          // USER_GPIO_4
+#define BUZZER_PIN 37           // USER_GPIO_5
+
+// Temperature Control Parameters
+#define DEFAULT_TARGET_TEMP -18.0f
+#define TEMP_DEADBAND 1.0f
+#define TEMP_MIN_SAFE -30.0f
+#define TEMP_MAX_SAFE 10.0f
+#define TEMP_TOLERANCE 0.5f
+#define MIN_TEMP -30.0f  // Minimum allowed temperature
+#define MAX_TEMP 10.0f   // Maximum allowed temperature
+#define DEFAULT_FAN_SPEED 50
+#define TEMP_UPDATE_INTERVAL 1000  // ms
+
+// FreeRTOS Task Configuration
+#define DISPLAY_TASK_STACK 8192
+#define TOUCH_TASK_STACK 4096
+#define LVGL_TASK_STACK 8192
+#define CONTROL_TASK_STACK 4096
+#define SENSOR_TASK_STACK 4096
+#define LOGGING_TASK_STACK 4096
+
+// Task Priorities (Core 0 - UI, Core 1 - Application)
+#define DISPLAY_TASK_PRIORITY (configMAX_PRIORITIES - 1)
+#define TOUCH_TASK_PRIORITY (configMAX_PRIORITIES - 2)
+#define LVGL_TASK_PRIORITY (configMAX_PRIORITIES - 3)
+#define CONTROL_TASK_PRIORITY (tskIDLE_PRIORITY + 3)
+#define SENSOR_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
+#define LOGGING_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
+
+// Memory Allocation (PSRAM)
+#define LVGL_MEM_SIZE (2 * 1024 * 1024)  // 2MB for LVGL
+#define FRAME_BUFFER_SIZE (800 * 480 * 2) // 16-bit color
 
 // WiFi Configuration
-#define WIFI_SSID "YourWiFiSSID"
-#define WIFI_PASSWORD "YourWiFiPassword"
-#define HOSTNAME "temperature-controller"
+#define WIFI_SSID "YourWiFiNetwork"      // Default WiFi network name
+#define WIFI_PASSWORD "YourPassword"     // Default WiFi password  
+#define HOSTNAME "ESP32-TempControl"     // Device hostname
 
-// Web Server
-#define WEB_SERVER_PORT 80
-#define WEBSOCKET_PORT 81
+// Color Constants (TFT color definitions)
+#define TFT_BLACK       0x0000
+#define TFT_WHITE       0xFFFF
+#define TFT_RED         0xF800
+#define TFT_GREEN       0x07E0
+#define TFT_BLUE        0x001F
+#define TFT_CYAN        0x07FF
+#define TFT_MAGENTA     0xF81F
+#define TFT_YELLOW      0xFFE0
+#define TFT_ORANGE      0xFD20
+#define TFT_DARKRED     0x7800
+#define TFT_DARKBLUE    0x000F
+#define TFT_DARKGREEN   0x03E0
 
 // Debug Configuration
 #ifdef DEBUG_MODE
-#define DEBUG_PRINT(x) Serial.print(x)
-#define DEBUG_PRINTLN(x) Serial.println(x)
-#define DEBUG_PRINTF(x, ...) Serial.printf(x, __VA_ARGS__)
+  #define DEBUG_SERIAL Serial
+  #define DEBUG_PRINT(x) DEBUG_SERIAL.print(x)
+  #define DEBUG_PRINTLN(x) DEBUG_SERIAL.println(x)
+  #define DEBUG_PRINTF(x, ...) DEBUG_SERIAL.printf(x, ##__VA_ARGS__)
 #else
-#define DEBUG_PRINT(x)
-#define DEBUG_PRINTLN(x)
-#define DEBUG_PRINTF(x, ...)
+  #define DEBUG_PRINT(x)
+  #define DEBUG_PRINTLN(x)
+  #define DEBUG_PRINTF(x, ...)
 #endif
 
-#endif
+#endif // CONFIG_H

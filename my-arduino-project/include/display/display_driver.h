@@ -9,6 +9,9 @@
 #include "config/config.h"
 #include "types/types.h"
 
+// Forward declarations
+struct TouchEvent;
+
 // Simple LovyanGFX placeholder class for now
 class LGFX : public lgfx::LGFX_Device {
 public:
@@ -73,6 +76,15 @@ public:
     uint16_t getWidth() const { return DISPLAY_WIDTH; }
     uint16_t getHeight() const { return DISPLAY_HEIGHT; }
     LGFX* getLGFX() { return _lgfx; }
+    LGFX* getTFT() { return _lgfx; }  // Alias for getLGFX
+    
+    // UI Methods
+    bool getTouch(TouchEvent& event);
+    void handleTouch(const TouchEvent& event);
+    void addButton(int16_t x, int16_t y, int16_t w, int16_t h, const char* label, uint16_t color, void (*callback)());
+    void drawMainScreen(const SensorData& data, const SystemConfig& config, const ControlState& state);
+    void forceRedraw() { _needsRedraw = true; }
+
 };
 
 // Global display instance
