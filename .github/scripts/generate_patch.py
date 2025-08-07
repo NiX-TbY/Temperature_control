@@ -80,3 +80,27 @@ patch_text = response.choices[0].message.content.strip()
 out_path = pathlib.Path("patch.diff")
 out_path.write_text(patch_text, encoding="utf-8")
 print(f"Patch written to {out_path.resolve()}")
+@@ prompt = textwrap.dedent(
+-    You are an expert embedded C++ engineer.
+-
+-    The following PlatformIO compile log failed.
+-    Produce **only** a unified git diff (no prose and no markdown fences)
+-    that fixes the errors without touching unrelated code.
+-    Use context lines (@@ … @@) so `git apply` can locate the patch.
++    You are an expert embedded C++ engineer.
++
++    The build failed.  When the ONLY errors are “declaration not found”
++    (e.g.  ‘fooBar was not declared in this scope’  or
++           ‘undefined reference to fooBar’),
++    create **minimal stub code** so it compiles:
++
++      • add a forward declaration & empty body for functions
++        (e.g.  `void fooBar() { /* TODO */ }`),
++      • or add a `#include "header.h"` if that header already exists,
++      • or add a missing `extern` variable definition.
++
++    Otherwise, produce the usual targeted fix.
++
++    Respond **only** with a unified git diff (no prose, no markdown).
++    Use context lines (@@ … @@) so `git apply` can locate the patch.
+
