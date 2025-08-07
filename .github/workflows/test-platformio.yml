@@ -10,15 +10,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         
-      - name: Test PlatformIO access
+      - name: Test PlatformIO registry connectivity
         run: |
           echo "Testing PlatformIO registry access..."
-          curl -I https://api.registry.platformio.org/
-          curl -I https://api.registry.nm1.platformio.org/
-          curl -I https://collector.platformio.org/
+          echo "✓ Testing api.registry.platformio.org:"
+          curl -I https://api.registry.platformio.org/ || echo "❌ Failed to connect"
+          echo "✓ Testing api.registry.nm1.platformio.org:"
+          curl -I https://api.registry.nm1.platformio.org/ || echo "❌ Failed to connect"
+          echo "✓ Testing collector.platformio.org:"
+          curl -I https://collector.platformio.org/ || echo "❌ Failed to connect"
           
-      - name: Install and test PlatformIO
+      - name: Verify environment variables
         run: |
+          echo "Checking environment variables..."
+          echo "PLATFORMIO_AUTH_TOKEN: $([ -n "$PLATFORMIO_AUTH_TOKEN" ] && echo "✅ Set" || echo "❌ Not set")"
+          echo "PIO_CORE_DIR: $([ -n "$PIO_CORE_DIR" ] && echo "✅ Set" || echo "❌ Not set")"
+          echo "PIO_HOME_DIR: $([ -n "$PIO_HOME_DIR" ] && echo "✅ Set" || echo "❌ Not set")"
+          
+      - name: Install PlatformIO
+        run: |
+          echo "Installing PlatformIO..."
+          python -m pip install --upgrade pip
           python -m pip install platformio
+          
+      - name: Test PlatformIO authentication
+        run: |
+          echo "Testing PlatformIO authentication..."
+          pio account show || echo "❌ Authentication failed"
+          
+      - name: Test project build
+        run: |
+          echo "Testing project build..."
           cd my-arduino-project
-          pio run --target checkprogsize
+          echo "Running check program size..."
+          pio run --target checkprogsize --verbose
+          
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            my-arduino-project/.pio/build/**/*.log
+            my-arduino-project/.pio/build/**/firmware.*
+          retention-days: 7
