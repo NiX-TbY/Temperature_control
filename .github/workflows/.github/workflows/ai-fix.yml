@@ -1,0 +1,44 @@
+name: AI-Fix-Build
+on:
+  workflow_run:
+    workflows: ["Build-ESP32-S3"]
+    types: [completed]
+
+jobs:
+  attempt-fix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Get the failing build log from the previous job
+      - uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: Build-ESP32-S3
+          name: build-log
+
+      # 2. Ask GPT-4o for a patch
+      - name: Generate patch
+        run: python .github/scripts/generate_patch.py build-log/build-log.txt
+
+      # 3. Apply and push the patch as a PR
+      - name: Apply & push
+        run: |
+          git config user.name  "auto-fix-bot"
+          git config user.email "bot@example.com"
+
+          if [ -s patch.diff ]; then
+            git apply --reject --whitespace=nowarn patch.diff || true
+          fi
+
+          if git diff --quiet; then
+            echo "No changes from AI"
+          else
+            branch="ai/fix-${GITHUB_RUN_ID}"
+            git checkout -b "$branch"
+            git add -A
+            git commit -m "AI: attempt to fix build"
+            git push -u origin "$branch"
+          fi
