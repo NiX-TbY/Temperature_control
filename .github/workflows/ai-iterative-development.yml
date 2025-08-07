@@ -1,0 +1,169 @@
+name: AI Iterative Development
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_iterations:
+        description: 'Maximum number of fix iterations'
+        required: false
+        default: '5'
+      focus_area:
+        description: 'Area to focus fixes on'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - build-errors
+        - libraries
+        - hardware
+        - display
+
+jobs:
+  analyze-and-prepare:
+    runs-on: ubuntu-latest
+    environment: copilot
+    outputs:
+      needs_fixes: ${{ steps.test.outputs.needs_fixes }}
+      error_type: ${{ steps.analyze.outputs.error_type }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Setup PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install platformio
+          
+      - name: Test Build
+        id: test
+        run: |
+          cd my-arduino-project
+          echo "🔨 Testing current build..."
+          
+          if pio run --target checkprogsize 2>&1 | tee ../build_output.log; then
+            echo "✅ Build successful!"
+            echo "needs_fixes=false" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Build failed - needs fixes"
+            echo "needs_fixes=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Analyze Errors
+        id: analyze
+        if: steps.test.outputs.needs_fixes == 'true'
+        run: |
+          echo "🔍 Analyzing build errors..."
+          
+          if grep -i "fatal error.*\.h.*no such file" build_output.log; then
+            echo "error_type=missing_headers" >> $GITHUB_OUTPUT
+            echo "📋 Found missing header files"
+          elif grep -i "undefined reference\|unresolved external" build_output.log; then
+            echo "error_type=linking_errors" >> $GITHUB_OUTPUT
+            echo "📋 Found linking errors"
+          elif grep -i "library.*not found\|no matching function" build_output.log; then
+            echo "error_type=library_issues" >> $GITHUB_OUTPUT  
+            echo "📋 Found library compatibility issues"
+          elif grep -i "error.*pin\|gpio" build_output.log; then
+            echo "error_type=hardware_config" >> $GITHUB_OUTPUT
+            echo "📋 Found hardware configuration issues"
+          else
+            echo "error_type=general" >> $GITHUB_OUTPUT
+            echo "📋 Found general compilation issues"
+          fi
+          
+      - name: Create AI Agent Issue Template
+        if: steps.test.outputs.needs_fixes == 'true'
+        run: |
+          cat > ai_agent_issue.md << 'EOF'
+          # 🤖 ESP32-S3 Temperature Control - Automated Fix Request
+          
+          ## Project Overview
+          Fix compilation issues for ESP32-S3 temperature control system with:
+          - **Hardware**: Waveshare ESP32-S3-Touch-LCD-4.3B (16MB Flash, PSRAM)
+          - **Display**: 4.3" LCD with LVGL + LovyanGFX
+          - **Sensors**: DS18B20 temperature sensors
+          - **Target**: Fully working temperature control system
+          
+          ## Current Issues
+          - **Status**: Build failing
+          - **Focus Area**: ${{ github.event.inputs.focus_area }}
+          - **Max Iterations**: ${{ github.event.inputs.max_iterations }}
+          
+          ## Fix Requirements
+          
+          ### 1. Core Compilation Issues
+          - Fix all syntax and compilation errors
+          - Resolve missing includes and headers
+          - Fix library compatibility issues
+          
+          ### 2. Hardware Configuration  
+          - Verify ESP32-S3 pin assignments for display
+          - Configure PSRAM settings correctly
+          - Set up touch and sensor pins properly
+          
+          ### 3. Display System
+          - Configure LVGL for 4.3" display
+          - Set up LovyanGFX driver correctly
+          - Implement touch input handling
+          
+          ### 4. Temperature Control
+          - Integrate DS18B20 sensors properly
+          - Implement temperature reading and control logic
+          - Create user interface for temperature display
+          
+          ## Files to Fix
+          - `my-arduino-project/src/main.cpp`
+          - `my-arduino-project/src/display/display_driver.cpp` 
+          - `my-arduino-project/src/sensors/temperature_sensor.cpp`
+          - `my-arduino-project/src/controllers/temperature_controller.cpp`
+          - `my-arduino-project/platformio.ini`
+          - `my-arduino-project/lv_conf.h`
+          
+          ## Success Criteria
+          - [x] Code compiles without errors
+          - [x] All libraries resolve correctly
+          - [x] Display initializes and shows UI
+          - [x] Temperature sensors read correctly
+          - [x] Control system responds to inputs
+          
+          **Trigger the coding agent by adding: #github-pull-request_copilot-coding-agent**
+          EOF
+          
+      - name: Upload Analysis Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-analysis-${{ github.run_number }}
+          path: |
+            build_output.log
+            ai_agent_issue.md
+          retention-days: 30
+          if-no-files-found: ignore
+          
+      - name: Display Next Steps
+        if: steps.test.outputs.needs_fixes == 'true'
+        run: |
+          echo "## 🚀 Ready for AI-Powered Iterative Development!"
+          echo ""
+          echo "### Next Steps:"
+          echo "1. 📥 Download the 'ai_agent_issue.md' from the artifacts above"
+          echo "2. 📝 Create a new GitHub issue with that content"
+          echo "3. 🏷️ Add the hashtag: #github-pull-request_copilot-coding-agent"
+          echo "4. 🤖 The AI agent will automatically start fixing your code!"
+          echo ""
+          echo "### What the AI Agent Will Do:"
+          echo "✅ Analyze build errors systematically"
+          echo "✅ Fix compilation issues step by step"
+          echo "✅ Update library configurations"
+          echo "✅ Optimize hardware setup for ESP32-S3"
+          echo "✅ Test each change automatically"
+          echo "✅ Create pull requests with working fixes"
+          echo "✅ Iterate until everything works perfectly"
+          echo ""
+          
+      - name: Success Notification
+        if: steps.test.outputs.needs_fixes == 'false'
+        run: |
+          echo "🎉 Congratulations! Your ESP32-S3 temperature control system builds successfully!"
+          echo "No fixes needed - your code is ready to upload to the hardware!"
