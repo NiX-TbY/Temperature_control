@@ -1,0 +1,40 @@
+{
+  "system": {
+    "version": "1.0.0",
+    "deviceName": "Temperature Controller",
+    "lastUpdate": "2025-01-01T00:00:00Z"
+  },
+  "temperature": {
+    "targetTemp": 22.0,
+    "tolerance": 0.5,
+    "minTemp": 5.0,
+    "maxTemp": 40.0,
+    "sensorCalibration": 0.0
+  },
+  "display": {
+    "brightness": 128,
+    "autoOff": false,
+    "theme": "default"
+  },
+  "network": {
+    "wifiEnabled": true,
+    "hostname": "temperature-controller",
+    "webServerEnabled": true,
+    "port": 80
+  },
+  "safety": {
+    "emergencyShutdown": true,
+    "temperatureAlerts": true,
+    "buzzerEnabled": true,
+    "maxErrorCount": 5
+  },
+  "control": {
+    "defaultMode": "auto",
+    "fanSpeed": 50,
+    "pidSettings": {
+      "kp": 2.0,
+      "ki": 0.1,
+      "kd": 0.5
+    }
+  }
+}

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperature Control System</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .status-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .temperature { font-size: 2em; color: #e74c3c; }
+        .target { font-size: 1.5em; color: #27ae60; }
+        .controls button { padding: 10px 20px; margin: 5px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; }
+        .heat { background: #e74c3c; color: white; }
+        .cool { background: #3498db; color: white; }
+        .auto { background: #27ae60; color: white; }
+        .off { background: #95a5a6; color: white; }
+        #chart { width: 100%; height: 300px; margin: 20px 0; }
+        .status-indicator { width: 20px; height: 20px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .status-idle { background: #95a5a6; }
+        .status-heating { background: #e74c3c; }
+        .status-cooling { background: #3498db; }
+        .status-error { background: #e67e22; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌡️ Temperature Control System</h1>
+        
+        <div class="status-card">
+            <h2>Current Status</h2>
+            <div><span id="statusIndicator" class="status-indicator status-idle"></span><span id="statusText">System Ready</span></div>
+            <div class="temperature">Temperature: <span id="temp">--</span>°C</div>
+            <div class="target">Target: <span id="target">--</span>°C</div>
+            <div>Humidity: <span id="humidity">--</span>%</div>
+            <div>Mode: <span id="mode">--</span></div>
+            <div>Uptime: <span id="uptime">--</span></div>
+        </div>
+        
+        <div class="controls">
+            <h3>Control Mode</h3>
+            <button class="heat" onclick="setMode('heat')">🔥 Heat</button>
+            <button class="cool" onclick="setMode('cool')">❄️ Cool</button>
+            <button class="auto" onclick="setMode('auto')">🤖 Auto</button>
+            <button class="off" onclick="setMode('off')">⏹️ Off</button>
+        </div>
+        
+        <div class="controls">
+            <h3>Target Temperature</h3>
+            <button onclick="adjustTemp(-1.0)">-1.0°C</button>
+            <button onclick="adjustTemp(-0.5)">-0.5°C</button>
+            <span id="targetDisplay">22.0°C</span>
+            <button onclick="adjustTemp(0.5)">+0.5°C</button>
+            <button onclick="adjustTemp(1.0)">+1.0°C</button>
+        </div>
+        
+        <div class="status-card">
+            <h3>Temperature History</h3>
+            <canvas id="chart"></canvas>
+        </div>
+        
+        <div class="status-card">
+            <h3>System Information</h3>
+            <div>Free Memory: <span id="freeHeap">--</span> bytes</div>
+            <div>WiFi Status: <span id="wifiStatus">--</span></div>
+            <div>Last Update: <span id="lastUpdate">--</span></div>
+        </div>
+    </div>
+    
+    <script>
+        let ws;
+        let chartData = [];
+        let maxDataPoints = 50;
+        
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.hostname + ':81');
+            
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                document.getElementById('statusText').textContent = 'Connected';
+            };
+            
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateDisplay(data);
+                    updateChart(data.temperature);
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+            
+            ws.onclose = function() {
+                console.log('WebSocket disconnected');
+                document.getElementById('statusText').textContent = 'Disconnected';
+                setTimeout(connectWebSocket, 5000); // Reconnect after 5 seconds
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+        
+        function updateDisplay(data) {
+            document.getElementById('temp').textContent = data.temperature.toFixed(1);
+            document.getElementById('target').textContent = data.target.toFixed(1);
+            document.getElementById('humidity').textContent = data.humidity.toFixed(1);
+            document.getElementById('mode').textContent = data.mode;
+            document.getElementById('uptime').textContent = data.uptime;
+            document.getElementById('targetDisplay').textContent = data.target.toFixed(1) + '°C';
+            document.getElementById('freeHeap').textContent = data.freeHeap;
+            document.getElementById('wifiStatus').textContent = data.wifiConnected ? 'Connected' : 'Disconnected';
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            
+            // Update status indicator
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            indicator.className = 'status-indicator';
+            
+            switch (data.status) {
+                case 'heating':
+                    indicator.classList.add('status-heating');
+                    statusText.textContent = 'Heating';
+                    break;
+                case 'cooling':
+                    indicator.classList.add('status-cooling');
+                    statusText.textContent = 'Cooling';
+                    break;
+                case 'error':
+                    indicator.classList.add('status-error');
+                    statusText.textContent = 'Error';
+                    break;
+                default:
+                    indicator.classList.add('status-idle');
+                    statusText.textContent = 'Idle';
+            }
+        }
+        
+        function setMode(mode) {
+            fetch('/api/mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode})
+            }).catch(err => console.error('Error setting mode:', err));
+        }
+        
+        function adjustTemp(delta) {
+            fetch('/api/target', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({delta: delta})
+            }).catch(err => console.error('Error adjusting temperature:', err));
+        }
+        
+        function updateChart(temp) {
+            chartData.push({
+                time: new Date(),
+                temperature: temp
+            });
+            
+            if (chartData.length > maxDataPoints) {
+                chartData.shift();
+            }
+            
+            drawChart();
+        }
+        
+        function drawChart() {
+            const canvas = document.getElementById('chart');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 300;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (chartData.length < 2) return;
+            
+            // Find min/max temperatures for scaling
+            const temps = chartData.map(d => d.temperature);
+            const minTemp = Math.min(...temps) - 1;
+            const maxTemp = Math.max(...temps) + 1;
+            const tempRange = maxTemp - minTemp;
+            
+            // Draw grid
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 5; i++) {
+                const y = (i / 5) * canvas.height;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+                
+                // Temperature labels
+                const temp = maxTemp - (i / 5) * tempRange;
+                ctx.fillStyle = '#666';
+                ctx.font = '12px Arial';
+                ctx.fillText(temp.toFixed(1) + '°C', 5, y - 5);
+            }
+            
+            // Draw temperature line
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            for (let i = 0; i < chartData.length; i++) {
+                const x = (i / (chartData.length - 1)) * canvas.width;
+                const y = canvas.height - ((chartData[i].temperature - minTemp) / tempRange) * canvas.height;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+            
+            // Draw target line
+            const targetTemp = parseFloat(document.getElementById('target').textContent);
+            if (!isNaN(targetTemp)) {
+                const targetY = canvas.height - ((targetTemp - minTemp) / tempRange) * canvas.height;
+                ctx.strokeStyle = '#27ae60';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(0, targetY);
+                ctx.lineTo(canvas.width, targetY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+        
+        // Initialize
+        connectWebSocket();
+        
+        // Fallback: poll for data if WebSocket fails
+        setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                fetch('/api/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        updateDisplay(data);
+                        updateChart(data.temperature);
+                    })
+                    .catch(err => console.error('Error fetching status:', err));
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

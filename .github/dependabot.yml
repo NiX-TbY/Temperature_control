@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    reviewers:
+      - "NiX-TbY"
+    assignees:
+      - "NiX-TbY"
+    
+  # Enable version updates for PlatformIO dependencies
+  - package-ecosystem: "pip"
+    directory: "/my-arduino-project"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    reviewers:
+      - "NiX-TbY"
+    assignees:
+      - "NiX-TbY"
+    ignore:
+      # Ignore major version updates for stable platforms
+      - dependency-name: "platformio"
+        update-types: ["version-update:semver-major"]
