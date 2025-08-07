@@ -1,0 +1,17 @@
+name: Build-ESP32-S3
+on:
+  push: {branches: ["**"]}
+  pull_request: {branches: [main]}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PlatformIO
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install platformio
+      - name: Compile
+        run: pio run
