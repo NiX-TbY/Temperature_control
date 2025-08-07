@@ -1,0 +1,19 @@
+{
+  "name": "ESP32_IO_Expander",
+  "version": "1.0.1", 
+  "description": "I/O expander driver for CH422G chip used in ESP32-S3 Touch LCD boards",
+  "keywords": ["io", "expander", "ch422g", "i2c"],
+  "authors": [
+    {
+      "name": "Espressif Systems",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/esp-arduino-libs/ESP32_IO_Expander.git"
+  },
+  "version": "1.0.1",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"]
+}

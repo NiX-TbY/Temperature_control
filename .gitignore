@@ -1,34 +1,59 @@
-# Gradle files
-.gradle/
-build/
+# PlatformIO build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clang_complete
+.gcc-flags.json
+.ccls-cache/
 
-# Local configuration file (sdk path, etc)
-local.properties
+# Compilation artifacts
+*.bin
+*.elf
+*.map
+*.hex
 
-# Log/OS Files
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Log files
 *.log
 
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
+# Build directories
+build/
+.build/
 
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
+# Libraries
+lib_deps/
+.libdeps/
 
-# Keystore files
-*.jks
-*.keystore
+# Backup files
+*.bak
+*.orig
 
-# Google Services (e.g. APIs or Firebase)
-google-services.json
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
 
-# Android Profiling
-*.hprof
+# Environment files
+.env
+.env.local

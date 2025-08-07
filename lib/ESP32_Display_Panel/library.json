@@ -1,0 +1,25 @@
+{
+  "name": "ESP32_Display_Panel",
+  "version": "1.0.0",
+  "description": "Display driver for ESP32-S3 with ST7262 controller and CH422G I/O expander support",
+  "keywords": ["display", "st7262", "esp32-s3", "rgb"],
+  "authors": [
+    {
+      "name": "Espressif Systems",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/esp-arduino-libs/ESP32_Display_Panel.git"
+  },
+  "version": "1.0.0",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": [
+    {
+      "name": "ESP32_IO_Expander",
+      "version": "1.0.1"
+    }
+  ]
+}
