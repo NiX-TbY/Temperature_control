@@ -6,7 +6,7 @@
 // Display / Graphics
 // When enabled, uses real ESP32-S3 RGB panel (LovyanGFX Bus_RGB + Panel_RGB)
 // When disabled, a stub LGFX placeholder compiles for logic/UI development.
-// #define ENABLE_RGB_PANEL
+#define ENABLE_RGB_PANEL  // Real RGB bus enabled after lgfx_rgb.h refactor
 
 // Touch (GT911) input
 #define ENABLE_TOUCH 1
@@ -26,3 +26,6 @@
 
 // Verbose logging for low-level drivers
 // #define ENABLE_LOG_VERBOSE
+
+// Diagnostic performance overlay (FPS, heap, touch events)
+#define ENABLE_DIAG_OVERLAY

@@ -1,20 +1,4 @@
-#ifndef SYSTEM_UTILS_H
-#define SYSTEM_UTILS_H
-
-#include <Arduino.h>
-
-class SystemUtils {
-public:
-    static void printSystemInfo();
-    static void watchdogReset();
-    static bool checkMemory();
-    static void rebootSystem();
-    static String getUptimeString();
-    static float getCPUTemperature();
-    static void formatFileSystem();
-    static bool saveConfig(const String& config);
-    static String loadConfig();
-    static void factoryReset();
-};
-
-#endif
+// Shim header retained to avoid include path precedence issues.
+// Redirects to the canonical SystemUtils declaration in include/utils/system_utils.h
+#pragma once
+#include "../../include/utils/system_utils.h"

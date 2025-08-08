@@ -1,4 +1,4 @@
-#include "utils/system_utils.h"
+#include "utils/system_utils.h"  // canonical include
 #include <esp_task_wdt.h>
 #include <esp_system.h>
 #include <esp_sleep.h>

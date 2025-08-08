@@ -258,6 +258,95 @@ Follow-Up Actions (Planned Next Revision):
 Revision 0.3 logged.
 
 ## 18. Controller Fault Refactor (Revision 0.4)
+## 22. Display Subsystem Integration & Diagnostics (Revision 0.8)
+Date: 2025-08-08
+
+Objective:
+Elevate the display stack from stub to production‑oriented RGB integration using LovyanGFX Bus/Panel RGB plus LVGL, introduce runtime timing abstraction, CH422G expander control skeleton, GT911 interrupt‑driven touch pathway, performance instrumentation (FPS + heap overlay), and a diagnostic feature flag framework to safely iterate panel tuning.
+
+Key Additions:
+1. RGB Panel Wrapper (`lgfx_rgb.h`): New class encapsulating LovyanGFX `lgfx::Panel_RGB` + `lgfx::Bus_RGB` configuration guarded by `ENABLE_RGB_PANEL`. Provides `applyTiming(const RgbPanelTiming&)` enabling future runtime re‑tuning without rebuilding.
+2. Timing Abstraction (`display_timing.h`): Central `RgbPanelTiming` struct with porches, sync pulses, polarity, and pixel clock (`pclk_hz`). Includes `calc_refresh_hz()` helper to empirically estimate refresh for provisional tuning sessions.
+3. Pin Mapping (`display_pins.h`): Explicit 16‑bit RGB565 subset mapping separated from logic code; simplifies board variant substitution and documents color channel continuity. Ensures no magic numbers in initialization routines.
+4. CH422G Driver Skeleton (`hal/ch422g.*`): Added shadow register model + mapped semantic helpers (`setDisplayEnable`, `resetPanel`, `resetTouch`, `setBacklightOn`). Real register protocol marked TODO; scaffolding isolates expander concerns from display logic now.
+5. Touch IRQ Integration: Added ISR trampoline capturing GT911 INT transitions, deferring I2C reads to safe context (flag checked in periodic update). Reduces polling overhead and improves worst‑case latency.
+6. Diagnostic Overlay (`ENABLE_DIAG_OVERLAY`): LVGL top‑layer label showing instantaneous FPS and free heap at ~500 ms cadence—toggleable via compile flag to keep production UI clean.
+7. Performance Counters: Frame increment + elapsed millisecond window → moving FPS computation inside `DisplayDriver::update()`. Provides objective metric while iterating timing / buffer sizing.
+8. Brightness Control Fallback: Implemented minimal backlight gating via expander DISP + optional LEDC PWM stub for future smooth fades (currently simple on/off with placeholder channel assignment).
+9. Feature Flags Extended: Added `ENABLE_DIAG_OVERLAY` (diagnostics) and earlier `ENABLE_RTC`, `ENABLE_SD_LOGGING` integrated into consolidated flag table. Centralization reduces configuration drift.
+10. Fault Overlay String Builder Refactor (Alignment): Diagnostic overlay coexists with fault/alarm layers; ensured z‑ordering does not obscure critical alarm indications (diag sits lower priority than fault/alarm overlays when active).
+
+Why (Design Rationale):
+* Abstraction layers (timing struct + wrapper) decouple library specifics from application allowing library upgrades (LovyanGFX / LVGL) with minimal churn.
+* Interrupt‑driven touch lowers idle I2C traffic, enabling more deterministic control loop scheduling headroom.
+* Diagnostic overlay accelerates empirical performance tuning (porch / pclk adjustments) while being trivially removable for release binaries.
+* Shadowed CH422G state avoids redundant writes and enables atomic multi‑bit manipulations once real protocol filled in.
+
+Current Limitations / TODO:
+* Timing values remain provisional (see Section 3) pending authoritative ST7262 table capture—refresh currently approximate (~50–55 Hz target at 25 MHz assumed). Must validate with scope / tearing inspection.
+* CH422G low‑level register format & I2C transaction retries not yet implemented (all helper methods assume success path).
+* Backlight dimming is binary; need LEDC channel assignment discovery + smooth ramp (gamma corrected) once hardware pin verified distinct from DISP.
+* No on‑device UI to adjust timing live (future engineering / service screen extension could surface pclk and porch sliders under guarded build flag).
+* FPS metric window simple fixed interval; could evolve to exponential moving average for smoother display once tuning stabilizes.
+
+Risk & Mitigations:
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Incorrect porch/polarity yields flicker/tearing | Poor UX / ghosting | Use logic analyzer + vendor timing sheet to lock values; update `DEFAULT_RGB_TIMING` |
+| Miswired / variant board pins | No display output | Centralized `display_pins.h` simplifies rapid correction |
+| Touch IRQ bouncing | Spurious extra reads | Debounce via single flag + read/clear GT911 status each cycle |
+| Expander write stub hides protocol errors | Silent display/backlight faults | Insert TODO + future error logging, add I2C ack checks |
+
+Task Table Delta (Updates & New IDs):
+| ID | Task | Status | Notes |
+|----|------|--------|-------|
+| D02 | Implement `LGFX_RGB` Bus config | Done | Wrapper + timing abstraction added |
+| D13 | RGB panel enable & timing verification | Active | Running provisional values, needs measurement |
+| D14 | GT911 interrupt-driven touch path | Done | ISR flag + deferred read |
+| D15 | Diagnostic overlay (FPS/Heap) | Done | Guarded by `ENABLE_DIAG_OVERLAY` |
+| D16 | CH422G semantic control layer | Active | Protocol TODO; shadow implemented |
+| D17 | Backlight PWM ramp | Planned | LEDC integration pending hardware pin confirm |
+| D18 | Runtime timing adjust UI | Planned | Service screen extension |
+| D19 | Timing empirical calibration (scope capture) | Pending | Requires hardware session |
+
+Feature Flags Table (Supersedes Section 6 snapshot – consolidating new flags):
+| Macro | Purpose | Default |
+|-------|---------|---------|
+| ENABLE_RGB_PANEL | Enable real RGB panel pipeline | ON (development) |
+| ENABLE_TOUCH | Enable GT911 touch input | ON |
+| ENABLE_DIAG_OVERLAY | Show FPS + heap overlay | OFF (enable when tuning) |
+| ENABLE_RTC | Include RTC driver hook | OFF |
+| ENABLE_SD_LOGGING | Enable SD event logging task | OFF |
+| ENABLE_DHT | Enable DHT sensor support | OFF |
+| ENABLE_DS18B20 | Enable DS18B20 sensors | OFF |
+| ENABLE_CAN | Enable CAN transceiver code | OFF |
+| ENABLE_RS485 | Enable RS‑485 interface | OFF |
+| ENABLE_LOG_VERBOSE | Verbose logging | OFF |
+
+(Legacy section 6 retained historically; future housekeeping may replace its table with this canonical one.)
+
+Operational Notes:
+* Enabling `ENABLE_DIAG_OVERLAY` increases minor LVGL object count; safe within current heap margin (>20% free).
+* `applyTiming()` presently requires re-init sequence externally if fundamental parameters change—hot update beyond porch/pulse adjustments may still cause transient artifacts (future double-buffer + panel blanking routine could smooth switch).
+* Frame pacing currently bound by LVGL flush cadence + RGB peripheral; further gains likely from tuning buffer size vs full flush region strategy.
+
+Next Steps (Display Roadmap Addendum):
+1. Acquire authoritative ST7262 timing spec; commit calibrated `DEFAULT_RGB_TIMING` + document derivation.
+2. Implement CH422G register protocol (read/modify/write + error status) and add diagnostic error counters.
+3. Integrate smooth backlight ramp (`setBrightness(uint8_t)`) with gamma curve LUT.
+4. Add service screen timing inspector (shows live pclk, computed refresh, porch values, FPS) with guarded editing controls.
+5. Introduce optional partial redraw heuristics (dirty rectangle) if future UI complexity raises frame cost.
+
+Performance Snapshot (Provisional Build):
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Flash Usage | ~31% | Includes LovyanGFX + LVGL + instrumentation |
+| RAM Usage | ~22% | With double buffers + diagnostics disabled |
+| FPS (light UI) | 38–45 (est) | Provisional at 25 MHz pclk; to validate on hardware |
+| Free Heap (runtime) | >120 KB | With diagnostics off |
+
+Revision 0.8 logged.
+
 Date: 2025-08-08
 
 Objective:

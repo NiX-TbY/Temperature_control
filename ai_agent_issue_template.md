@@ -114,3 +114,19 @@ warning: "DEBUG_PRINTLN" redefined
 5. **Low**: Optimize performance and add advanced features
 
 **Trigger the coding agent by adding: #github-pull-request_copilot-coding-agent**
+## Additional Context
+- **Project URL**: [GitHub Repository](<repository-url>)
+- **Platform**: PlatformIO with ESP32-S3 support
+- **Display Library**: LovyanGFX with LVGL integration
+- **Sensor Library**: DHT sensor library for temperature/humidity
+
+Please ensure all fixes maintain compatibility with the existing project structure and follow best practices for ESP32 development.
+
+## Additional Notes
+- Ensure all changes are well-documented in code comments
+- Maintain consistent coding style with existing project files
+- Test thoroughly on actual hardware after fixes
+- Consider future extensibility for additional sensors or features
+
+## Contact Information
+For any questions or further clarification, please reach out to the project maintainer at [

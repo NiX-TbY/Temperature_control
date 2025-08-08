@@ -2,7 +2,7 @@
 #include <lvgl.h>
 #include "display/display_driver.h"
 #include "rtos/task_config.h"
-#include "utils/system_utils.h"
+#include "utils/system_utils.h"  // canonical include
 #include "config/feature_flags.h"
 #ifdef ENABLE_DS18B20
 #include "sensors/temperature_sensor.h"

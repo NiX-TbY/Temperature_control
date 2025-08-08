@@ -1,7 +1,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <Arduino.h>
+#ifdef UNIT_TEST_NATIVE
+  #include "test_support/arduino_stub.h"
+#else
+  #include <Arduino.h>
+#endif
 
 // Optional DHT sensor support (excluded during minimal display-only build)
 #ifdef ENABLE_DHT
@@ -48,13 +52,12 @@
 #define DHT_TYPE DHT22          // DHT22 (AM2302)
 #define SENSOR_READ_INTERVAL 2000  // DHT read interval in ms
 
-// Display Constants
-#define DISPLAY_WIDTH 800
-#define DISPLAY_HEIGHT 480
-#define I2C_FREQ 400000
+// (Removed duplicate DISPLAY_* and I2C_FREQ definitions to avoid redefinition warnings)
 
-// Debug settings
+// Debug settings (guard to avoid redefinition from build_flags)
+#ifndef DEBUG_MODE
 #define DEBUG_MODE
+#endif
 #define MAX_SENSORS 4
 #define TEMP_READ_INTERVAL 1000 // ms
 #define SENSOR_TIMEOUT 5000     // ms
@@ -154,10 +157,16 @@
 
 // Debug Configuration
 #ifdef DEBUG_MODE
-  #define DEBUG_SERIAL Serial
-  #define DEBUG_PRINT(x) DEBUG_SERIAL.print(x)
-  #define DEBUG_PRINTLN(x) DEBUG_SERIAL.println(x)
-  #define DEBUG_PRINTF(x, ...) DEBUG_SERIAL.printf(x, ##__VA_ARGS__)
+  #ifndef UNIT_TEST_NATIVE
+    #define DEBUG_SERIAL Serial
+    #define DEBUG_PRINT(x) DEBUG_SERIAL.print(x)
+    #define DEBUG_PRINTLN(x) DEBUG_SERIAL.println(x)
+    #define DEBUG_PRINTF(x, ...) DEBUG_SERIAL.printf(x, ##__VA_ARGS__)
+  #else
+    #define DEBUG_PRINT(x)
+    #define DEBUG_PRINTLN(x)
+    #define DEBUG_PRINTF(x, ...)
+  #endif
 #else
   #define DEBUG_PRINT(x)
   #define DEBUG_PRINTLN(x)

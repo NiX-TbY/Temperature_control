@@ -1,84 +1,164 @@
 #include "sensors/temperature_sensor.h"
 
-TemperatureSensor::TemperatureSensor() {
-    _dht = new DHT(DHT_PIN, DHT_TYPE);
-}
+// Global sensor instance
+TemperatureSensor tempSensor;
 
-TemperatureSensor::~TemperatureSensor() {
-    delete _dht;
+TemperatureSensor::TemperatureSensor() {
+    _oneWire = nullptr;
+    _dallas = nullptr;
+    _sensorCount = 0;
+    _lastReadTime = 0;
+    
+    // Initialize sensor data structures
+    for (int i = 0; i < MAX_SENSORS; i++) {
+        _sensors[i].temperature = 0.0;
+        _sensors[i].humidity = 0.0;
+        _sensors[i].valid = false;
+        _sensors[i].timestamp = 0;
+        _sensors[i].lastValidReading = 0;
+        _sensors[i].sensorId = i;
+        _sensors[i].address = "";
+    }
 }
 
 bool TemperatureSensor::init() {
-    DEBUG_PRINTLN("Initializing temperature sensor...");
+    DEBUG_PRINTLN("Initializing Temperature Sensors...");
     
-    _dht->begin();
-    delay(2000); // DHT needs time to stabilize
+    // Create OneWire instance
+    _oneWire = new OneWire(DS18B20_PIN);
     
-    // Test read
-    if (readSensor()) {
-        _initialized = true;
-        DEBUG_PRINTLN("Temperature sensor initialized successfully");
-        return true;
-    } else {
-        DEBUG_PRINTLN("Failed to initialize temperature sensor");
-        return false;
-    }
-}
-
-bool TemperatureSensor::readSensor() {
-    if (!_initialized || millis() - _lastReadTime < SENSOR_READ_INTERVAL) {
-        return _lastReading.isValid;
-    }
+    // Create DallasTemperature instance
+    _dallas = new DallasTemperature(_oneWire);
     
-    float temp = _dht->readTemperature();
-    float humidity = _dht->readHumidity();
+    // Start the library
+    _dallas->begin();
     
-    if (isnan(temp) || isnan(humidity)) {
-        _errorCount++;
-        DEBUG_PRINTF("Sensor read error count: %d\n", _errorCount);
-        
-        if (_errorCount > 5) {
-            _lastReading.isValid = false;
-        }
+    // Set resolution to 12 bits for highest accuracy
+    _dallas->setResolution(12);
+    
+    // Scan for sensors
+    scanSensors();
+    
+    if (_sensorCount == 0) {
+        DEBUG_PRINTLN("WARNING: No temperature sensors found!");
         return false;
     }
     
-    _errorCount = 0;
-    _lastReading.temperature = temp;
-    _lastReading.humidity = humidity;
-    _lastReading.heatIndex = _dht->computeHeatIndex(temp, humidity, false);
-    _lastReading.isValid = true;
-    _lastReading.timestamp = millis();
-    _lastReadTime = millis();
+    DEBUG_PRINTF("Found %d temperature sensor(s)\n", _sensorCount);
     
-    DEBUG_PRINTF("Sensor reading - Temp: %.1f°C, Humidity: %.1f%%, Heat Index: %.1f°C\n", 
-                 temp, humidity, _lastReading.heatIndex);
+    // Perform initial reading
+    update();
     
     return true;
 }
 
-void TemperatureSensor::calibrateTemperature(float offset) {
-    if (_lastReading.isValid) {
-        _lastReading.temperature += offset;
+void TemperatureSensor::scanSensors() {
+    _sensorCount = 0;
+    
+    // Get device count
+    uint8_t deviceCount = _dallas->getDeviceCount();
+    
+    DEBUG_PRINTF("Scanning for DS18B20 sensors... Found %d device(s)\n", deviceCount);
+    
+    // Iterate through devices
+    for (uint8_t i = 0; i < deviceCount && i < MAX_SENSORS; i++) {
+        if (_dallas->getAddress(_addresses[i], i)) {
+            _sensors[i].address = addressToString(_addresses[i]);
+            _sensors[i].sensorId = i;
+            _sensorCount++;
+            
+            DEBUG_PRINTF("Sensor %d: %s\n", i, _sensors[i].address.c_str());
+        }
     }
 }
 
-bool TemperatureSensor::selfTest() {
-    DEBUG_PRINTLN("Running sensor self-test...");
-    
-    for (int i = 0; i < 3; i++) {
-        if (readSensor() && _lastReading.isValid) {
-            if (_lastReading.temperature > -40 && _lastReading.temperature < 80 &&
-                _lastReading.humidity >= 0 && _lastReading.humidity <= 100) {
-                DEBUG_PRINTLN("Sensor self-test passed");
-                return true;
-            }
-        }
-        delay(1000);
+void TemperatureSensor::update() {
+    // Check if enough time has passed since last reading
+    if (millis() - _lastReadTime < TEMP_READ_INTERVAL) {
+        return;
     }
     
-    DEBUG_PRINTLN("Sensor self-test failed");
+    // Request temperatures from all sensors
+    _dallas->requestTemperatures();
+    
+    // Read each sensor
+    for (uint8_t i = 0; i < _sensorCount; i++) {
+        float temp = _dallas->getTempC(_addresses[i]);
+        
+        if (isValidReading(temp)) {
+            _sensors[i].temperature = temp;
+            _sensors[i].valid = true;
+            _sensors[i].timestamp = millis();
+            _sensors[i].lastValidReading = millis();
+        } else {
+            // Check for timeout
+            if (millis() - _sensors[i].lastValidReading > SENSOR_TIMEOUT) {
+                _sensors[i].valid = false;
+            }
+        }
+    }
+    
+    _lastReadTime = millis();
+}
+
+SensorData TemperatureSensor::getSensorData(uint8_t index) const {
+    if (index < _sensorCount) {
+        return _sensors[index];
+    }
+    
+    // Return invalid sensor data
+    SensorData invalid;
+    invalid.valid = false;
+    return invalid;
+}
+
+float TemperatureSensor::getAverageTemperature() const {
+    float sum = 0;
+    uint8_t validCount = 0;
+    
+    for (uint8_t i = 0; i < _sensorCount; i++) {
+        if (_sensors[i].valid) {
+            sum += _sensors[i].temperature;
+            validCount++;
+        }
+    }
+    
+    if (validCount > 0) {
+        return sum / validCount;
+    }
+    
+    return 0.0;
+}
+
+bool TemperatureSensor::hasValidData() const {
+    for (uint8_t i = 0; i < _sensorCount; i++) {
+        if (_sensors[i].valid) {
+            return true;
+        }
+    }
     return false;
 }
 
-TemperatureSensor tempSensor;
+String TemperatureSensor::addressToString(DeviceAddress addr) {
+    String str = "";
+    for (uint8_t i = 0; i < 8; i++) {
+        if (addr[i] < 16) str += "0";
+        str += String(addr[i], HEX);
+        if (i < 7) str += ":";
+    }
+    return str;
+}
+
+bool TemperatureSensor::isValidReading(float temp) {
+    // DS18B20 returns -127 for errors
+    if (temp == DEVICE_DISCONNECTED_C || temp == -127.0) {
+        return false;
+    }
+    
+    // Check for reasonable temperature range
+    if (temp < -55.0 || temp > 125.0) {
+        return false;
+    }
+    
+    return true;
+}

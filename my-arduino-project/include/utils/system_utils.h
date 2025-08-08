@@ -1,10 +1,16 @@
 #ifndef SYSTEM_UTILS_H
 #define SYSTEM_UTILS_H
 
+#ifdef UNIT_TEST_NATIVE
+#include "test_support/arduino_stub.h"
+#else
 #include <Arduino.h>
+#endif
+#ifndef UNIT_TEST_NATIVE
 #include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#endif
 #include "types/types.h"
 #include "config/feature_flags.h"
 
