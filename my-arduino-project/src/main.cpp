@@ -60,6 +60,7 @@ static void lvglTask(void *arg) {
         }
         lv_label_set_text(clkLabel, gTimeLabel);
 #endif
+        SystemUtils::watchdogReset();
         vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_LVGL));
     }
 }
@@ -81,6 +82,7 @@ static void controlTask(void *arg) {
         // Fans follow compressor for now
         relays.setRelay(RELAY_FAN_MAIN, needCooling);
 #endif
+        SystemUtils::watchdogReset();
         vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_CONTROL));
     }
 }
@@ -108,6 +110,7 @@ static void sensorTask(void *arg) {
         gState.currentTemp = temp;
         gState.lastSensorUpdate = millis();
 #endif
+        SystemUtils::watchdogReset();
         vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_SENSOR));
     }
 }
@@ -118,6 +121,7 @@ static void timeTask(void *arg) {
     TickType_t last = xTaskGetTickCount();
     while (true) {
         strcpy(gTimeLabel, rtcClock.isoTimestamp().c_str());
+        SystemUtils::watchdogReset();
         vTaskDelayUntil(&last, pdMS_TO_TICKS(1000));
     }
 }
@@ -152,6 +156,9 @@ void setup() {
         Serial.println("No DS18B20 sensors detected");
     }
 #endif
+
+    // Run self-test early (after I2C + peripherals init, before tasks)
+    SystemUtils::runSelfTest();
 
     // Init display + LVGL (allocates large buffers in PSRAM)
     if (!display.init()) {
@@ -200,5 +207,6 @@ void setup() {
 }
 
 void loop() {
+    SystemUtils::watchdogReset();
     vTaskDelay(pdMS_TO_TICKS(1000));
 }

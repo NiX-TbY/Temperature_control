@@ -36,6 +36,39 @@ A comprehensive temperature control system built for ESP32-S3 with a 4.3" Wavesh
 | Touch SDA | GPIO 6 | I2C data line |
 | Touch SCL | GPIO 7 | I2C clock line |
 
+## 🧩 Feature Flags
+Located in `include/config/feature_flags.h`. Enable/disable subsystems via build flags (e.g. in `platformio.ini`):
+```
+build_flags = -DENABLE_SD_LOGGING -DENABLE_RTC
+```
+Active flags (default):
+- `ENABLE_TOUCH` – GT911 touch
+- `ENABLE_DS18B20` – 1-Wire temperature sensors
+- `ENABLE_RELAYS` – Relay control abstraction
+- `ENABLE_RTC` – External RTC timekeeping
+- `ENABLE_SD_LOGGING` – SD card CSV logging (data + events)
+Optional (commented): `ENABLE_RGB_PANEL`, `ENABLE_DHT`, `ENABLE_CAN`, `ENABLE_RS485`, `ENABLE_LOG_VERBOSE`.
+
+## 🗃️ Logging
+When `ENABLE_SD_LOGGING` is defined:
+- Data logs stored as `/logs/YYYYMMDD.csv` (rotated at 1MB with numerical suffixes)
+- Event records appended to `/logs/events.csv`
+- Each data row: `timestamp,date,time,activeSensors,s0Temp..s3Temp,curTemp,avgTemp,targetTemp,alarm,faultMask,freeHeap,freePSRAM`
+- Automatic size-based rotation; new files include a header.
+- Writes are skipped if free heap below `LOW_MEM_HEAP_THRESHOLD` (40KB heuristic) to protect system stability.
+- SD initialization uses exponential backoff (max 5 attempts).
+
+## 🧪 Boot Self-Test
+At startup `SystemUtils::runSelfTest()` prints:
+- Heap / PSRAM levels
+- Reset reason
+- SD card availability (with retry)
+- Status of compiled subsystems (RTC, sensors, relays)
+Use the serial monitor (115200 baud) to review.
+
+## ⏱️ Watchdog Integration
+`SystemUtils::watchdogReset()` is invoked within major tasks (UI, control, sensor, time, main loop) to keep the task watchdog fed when enabled by the ESP-IDF configuration. Extend this to any long-running custom tasks you add.
+
 ## 🚀 Building and Uploading
 
 ```bash

@@ -148,6 +148,19 @@ String SystemUtils::formatTemperature(float temp, bool includeUnit) {
     return String(buffer);
 }
 
+#ifdef ENABLE_SD_LOGGING
+bool SystemUtils::initSDCardWithRetry(uint8_t attempts, uint32_t backoffMs) {
+    for (uint8_t i = 0; i < attempts; ++i) {
+        if (initSDCard()) return true; // underlying will set initialized flag
+        Serial.printf("[SD] Init attempt %u failed, retrying in %lu ms...\n", i + 1, (unsigned long)backoffMs);
+        delay(backoffMs);
+        backoffMs *= 2; // exponential backoff
+    }
+    Serial.println("[SD] All init attempts failed.");
+    return false;
+}
+#endif
+
 bool SystemUtils::initSDCard() {
 #ifdef ENABLE_SD_LOGGING
     static bool initialized = false;
@@ -175,7 +188,11 @@ bool SystemUtils::initSDCard() {
 
 bool SystemUtils::logData(const SystemData& data) {
 #ifdef ENABLE_SD_LOGGING
-    if (!initSDCard()) return false;
+    if (isLowMemory()) {
+        Serial.println("[SD] Skipping data log due to low memory");
+        return false;
+    }
+    if (!initSDCard() && !initSDCardWithRetry(SD_INIT_MAX_ATTEMPTS, SD_INIT_RETRY_BACKOFF_MS)) return false;
     // Build date-based filename: /logs/yyyymmdd.csv (fallback if no date)
     char fname[32];
     if (data.dateString.length() >= 10) { // Expecting YYYY-MM-DD
@@ -248,7 +265,11 @@ bool SystemUtils::logData(const SystemData& data) {
 
 bool SystemUtils::logEventRecord(unsigned long ts, uint16_t code, uint32_t faultMask) {
 #ifdef ENABLE_SD_LOGGING
-    if (!initSDCard()) return false;
+    if (isLowMemory()) {
+        Serial.println("[SD] Skipping event log due to low memory");
+        return false;
+    }
+    if (!initSDCard() && !initSDCardWithRetry(SD_INIT_MAX_ATTEMPTS, SD_INIT_RETRY_BACKOFF_MS)) return false;
     // Derive date for filename from RTC if available via global helper (not passed) -> fallback single file
     char fname[40] = {0};
     // Use a simple events.csv if no RTC date (could be extended to pass date)
@@ -285,4 +306,38 @@ void SystemUtils::watchdogReset() {
         // If watchdog not available, do nothing
         return;
     #endif
+}
+
+bool SystemUtils::isLowMemory() {
+#ifdef ENABLE_SD_LOGGING
+    return getFreeHeap() < LOW_MEM_HEAP_THRESHOLD; // simple heuristic
+#else
+    return false;
+#endif
+}
+
+void SystemUtils::runSelfTest() {
+    Serial.println("=== Boot Self-Test ===");
+    Serial.printf("Heap: %lu, PSRAM: %lu\n", (unsigned long)getFreeHeap(), (unsigned long)getFreePSRAM());
+    Serial.printf("Reset reason: %s\n", getResetReason().c_str());
+#ifdef ENABLE_SD_LOGGING
+    bool sd = initSDCardWithRetry(3, SD_INIT_RETRY_BACKOFF_MS);
+    Serial.printf("SD card: %s\n", sd ? "OK" : "FAIL");
+#endif
+#ifdef ENABLE_RTC
+    Serial.println("RTC: enabled (status checked elsewhere)");
+#else
+    Serial.println("RTC: disabled");
+#endif
+#ifdef ENABLE_DS18B20
+    Serial.println("Sensors: DS18B20 enabled");
+#else
+    Serial.println("Sensors: DS18B20 disabled");
+#endif
+#ifdef ENABLE_RELAYS
+    Serial.println("Relays: enabled");
+#else
+    Serial.println("Relays: disabled");
+#endif
+    Serial.println("=======================");
 }

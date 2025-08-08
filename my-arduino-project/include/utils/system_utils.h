@@ -44,12 +44,24 @@ public:
 
     // Watchdog
     static void watchdogReset();
+
+    // Self-test & diagnostics
+    static void runSelfTest();              // Prints a consolidated boot self-test report
+    static bool isLowMemory();              // Heuristic low-memory guard
+
+private:
+#ifdef ENABLE_SD_LOGGING
+    static bool initSDCardWithRetry(uint8_t attempts, uint32_t backoffMs); // retry/backoff helper
+#endif
 };
 
-// Logging policy constants
+// Logging / system policy constants
 #ifdef ENABLE_SD_LOGGING
 constexpr size_t LOG_FILE_MAX_SIZE = 1 * 1024 * 1024; // 1MB rotation threshold
 constexpr uint32_t LOG_MIN_INTERVAL_MS = 5000; // recommended minimum cadence
+constexpr uint32_t SD_INIT_RETRY_BACKOFF_MS = 500; // initial backoff
+constexpr uint8_t  SD_INIT_MAX_ATTEMPTS = 5;       // attempts before giving up
+constexpr uint32_t LOW_MEM_HEAP_THRESHOLD = 40 * 1024;  // bytes
 #endif
 
 #endif // SYSTEM_UTILS_H
