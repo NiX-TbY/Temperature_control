@@ -2,7 +2,16 @@
 #define CONFIG_H
 
 #include <Arduino.h>
-#include <DHT.h>  // For DHT sensor type constants
+
+// Optional DHT sensor support (excluded during minimal display-only build)
+#ifdef ENABLE_DHT
+  #include <DHT.h>
+#else
+  // Provide minimal stand-ins so rest of code referencing DHT_TYPE compiles
+  #ifndef DHT22
+    #define DHT22 22
+  #endif
+#endif
 
 // System Version
 #define SYSTEM_VERSION "1.0.0"
@@ -66,6 +75,43 @@
 #define MAX_TEMP 10.0f   // Maximum allowed temperature
 #define DEFAULT_FAN_SPEED 50
 #define TEMP_UPDATE_INTERVAL 1000  // ms
+
+// Fault / Alarm Thresholds & Debounce (tunable)
+#define OVER_TEMPERATURE_MARGIN 5.0f          // Degrees above target before over-temp fault window starts
+#define UNDER_TEMPERATURE_MARGIN 5.0f         // Degrees below target before under-temp fault window starts
+#define FAULT_DEBOUNCE_MS 5000                // Generic debounce for persistent condition (5s)
+#define SENSOR_MISSING_DEBOUNCE_MS 3000       // Time without any valid sensor before fault
+#define RANGE_FAULT_DEBOUNCE_MS 1000          // Out-of-safe-range persistence
+#define DEFROST_TIMEOUT_GRACE_MS 60000        // Additional grace after configured duration before timeout fault
+#define MIN_COMPRESSOR_OFF_TIME_MS 180000     // 3 minutes minimum off time (short cycle protection)
+#define MIN_COMPRESSOR_ON_TIME_MS 60000       // 1 minute minimum on time (avoid rapid toggling)
+
+// Test overrides: when building under UNIT_TEST reduce long debounce / intervals to keep tests fast.
+#ifdef UNIT_TEST
+  #undef FAULT_DEBOUNCE_MS
+  #define FAULT_DEBOUNCE_MS 30
+  #undef SENSOR_MISSING_DEBOUNCE_MS
+  #define SENSOR_MISSING_DEBOUNCE_MS 30
+  #undef RANGE_FAULT_DEBOUNCE_MS
+  #define RANGE_FAULT_DEBOUNCE_MS 30
+  #undef DEFROST_TIMEOUT_GRACE_MS
+  #define DEFROST_TIMEOUT_GRACE_MS 120
+  #undef MIN_COMPRESSOR_OFF_TIME_MS
+  #define MIN_COMPRESSOR_OFF_TIME_MS 120
+  #undef MIN_COMPRESSOR_ON_TIME_MS
+  #define MIN_COMPRESSOR_ON_TIME_MS 60
+  #undef ALARM_TRIGGER_GRACE_MS
+  #define ALARM_TRIGGER_GRACE_MS 120
+  #undef ALARM_SILENCE_DURATION_MS
+  #define ALARM_SILENCE_DURATION_MS 240
+  #undef TEMP_UPDATE_INTERVAL
+  #define TEMP_UPDATE_INTERVAL 50
+#endif
+
+// Alarm System Timing
+#define ALARM_TRIGGER_GRACE_MS 60000          // Over/under temp fault must persist this long before escalating to alarm state
+#define ALARM_SILENCE_DURATION_MS 900000      // 15 minutes silence period default
+#define ALARM_PULSE_INTERVAL_MS 1000          // Pulse interval for temperature display flashing
 
 // FreeRTOS Task Configuration
 #define DISPLAY_TASK_STACK 8192
