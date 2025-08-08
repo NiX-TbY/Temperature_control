@@ -1,0 +1,82 @@
+name: Copilot Setup Steps
+on:
+  workflow_dispatch:
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-22.04-4core  # Use larger runner for better performance
+    environment: copilot
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Configure Git for PlatformIO
+        run: |
+          git config --global user.name "GitHub Copilot"
+          git config --global user.email "copilot@github.com"
+          git config --global init.defaultBranch main
+
+      - name: Create PlatformIO directories
+        run: |
+          mkdir -p $PLATFORMIO_CORE_DIR
+          mkdir -p $PLATFORMIO_LIBDEPS_DIR
+          mkdir -p $PLATFORMIO_BUILD_CACHE_DIR
+          mkdir -p $PLATFORMIO_WORKSPACE_DIR
+          mkdir -p ~/.platformio
+          
+      - name: Set PlatformIO permissions
+        run: |
+          chmod -R 755 $PLATFORMIO_CORE_DIR
+          chmod -R 755 ~/.platformio
+
+      - name: Install PlatformIO Core
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio==6.1.15
+          pio --version
+          # Set up without authentication for open-source libraries
+
+      - name: Pre-download PlatformIO packages
+        run: |
+          # Download ESP32 platform
+          pio platform install espressif32@6.12.0
+          
+          # Pre-install common libraries
+          pio lib -g install "lvgl/lvgl@8.3.11"
+          pio lib -g install "lovyan03/LovyanGFX@^1.1.16"
+          pio lib -g install "OneWire"
+          pio lib -g install "DallasTemperature"
+          pio lib -g install "ArduinoJson@7.4.2"
+          pio lib -g install "adafruit/Adafruit Unified Sensor@1.1.15"
+          pio lib -g install "adafruit/DHT sensor library@^1.4.6"
+
+      - name: Setup ESP32 toolchain
+        run: |
+          # Install ESP32 toolchain components
+          pio platform install espressif32 --with-package framework-arduinoespressif32
+          pio platform install espressif32 --with-package toolchain-xtensa-esp32s3
+
+      - name: Verify PlatformIO installation
+        run: |
+          pio system info
+          pio platform list --installed
+          pio lib -g list
+
+      - name: Create workspace cache
+        run: |
+          # Cache the entire PlatformIO setup
+          tar -czf /tmp/platformio-cache.tar.gz -C $HOME .platformio || true
+          ls -la /tmp/platformio-cache.tar.gz || echo "Cache creation failed"
+
+      - name: Upload PlatformIO cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: platformio-cache
+          path: /tmp/platformio-cache.tar.gz
+          retention-days: 7
