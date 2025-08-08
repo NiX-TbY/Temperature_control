@@ -2,9 +2,6 @@
 #include <unity.h>
 #include "utils/system_utils.h"
 
-void setUp() {}
-void tearDown() {}
-
 void test_logging_constants_present() {
 #ifdef ENABLE_SD_LOGGING
     TEST_ASSERT_TRUE(LOG_FILE_MAX_SIZE > 0);
@@ -18,11 +15,4 @@ void test_low_memory_guard() {
     bool low = SystemUtils::isLowMemory();
     (void)low;
     TEST_ASSERT_TRUE(true);
-}
-
-int main() {
-    UNITY_BEGIN();
-    RUN_TEST(test_logging_constants_present);
-    RUN_TEST(test_low_memory_guard);
-    return UNITY_END();
 }
