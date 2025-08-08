@@ -4,6 +4,10 @@
 #include "rtos/task_config.h"
 #include "utils/system_utils.h"  // canonical include
 #include "config/feature_flags.h"
+#ifdef ENABLE_OTA
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#endif
 #ifdef ENABLE_DS18B20
 #include "sensors/temperature_sensor.h"
 #endif
@@ -204,9 +208,38 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW); // off
 #endif
+
+#ifdef ENABLE_OTA
+    Serial.println("[OTA] Starting WiFi connection for OTA...");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    unsigned long wifiStart = millis();
+    while (WiFi.status() != WL_CONNECTED && (millis() - wifiStart) < 15000) {
+        delay(250);
+        Serial.print('.');
+    }
+    Serial.println();
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[OTA] WiFi connected: %s  IP: %s\n", WIFI_SSID, WiFi.localIP().toString().c_str());
+        ArduinoOTA.setHostname(HOSTNAME);
+        ArduinoOTA.onStart([](){ Serial.println("[OTA] Start"); });
+        ArduinoOTA.onEnd([](){ Serial.println("[OTA] End"); });
+        ArduinoOTA.onProgress([](unsigned int prog, unsigned int total){
+            static unsigned int lastPct = 0; unsigned int pct = (prog * 100) / total; if (pct != lastPct) { Serial.printf("[OTA] %u%%\n", pct); lastPct = pct; }
+        });
+        ArduinoOTA.onError([](ota_error_t err){ Serial.printf("[OTA] Error %u\n", err); });
+        ArduinoOTA.begin();
+        Serial.println("[OTA] Ready (use espota / PlatformIO upload_protocol=espota)");
+    } else {
+        Serial.println("[OTA] WiFi connect failed, OTA disabled this session");
+    }
+#endif
 }
 
 void loop() {
     SystemUtils::watchdogReset();
+#ifdef ENABLE_OTA
+    if (WiFi.isConnected()) ArduinoOTA.handle();
+#endif
     vTaskDelay(pdMS_TO_TICKS(1000));
 }

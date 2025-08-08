@@ -24,6 +24,9 @@
 #define ENABLE_RTC
 #define ENABLE_SD_LOGGING
 
+// Over-The-Air updates (WiFi / ArduinoOTA)
+#define ENABLE_OTA
+
 // Verbose logging for low-level drivers
 // #define ENABLE_LOG_VERBOSE
 
