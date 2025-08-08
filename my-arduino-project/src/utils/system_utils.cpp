@@ -1,4 +1,5 @@
 #include "utils/system_utils.h"  // canonical include
+#include "version.h"
 #include <esp_task_wdt.h>
 #include <esp_system.h>
 #include <esp_sleep.h>
@@ -318,6 +319,7 @@ bool SystemUtils::isLowMemory() {
 
 void SystemUtils::runSelfTest() {
     Serial.println("=== Boot Self-Test ===");
+    Serial.printf("Firmware: %s (%s) build %lu\n", FW_VERSION_GIT, FW_VERSION_SHORT, (unsigned long)FW_BUILD_UNIX);
     Serial.printf("Heap: %lu, PSRAM: %lu\n", (unsigned long)getFreeHeap(), (unsigned long)getFreePSRAM());
     Serial.printf("Reset reason: %s\n", getResetReason().c_str());
 #ifdef ENABLE_SD_LOGGING

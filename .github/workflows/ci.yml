@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [default, diag]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +36,13 @@ jobs:
 
       - name: Build (ESP32-S3)
         working-directory: my-arduino-project
-        run: pio run -e esp32-s3-devkitc-1
+        run: |
+          if [ "${{ matrix.variant }}" = "diag" ]; then
+            echo "Adding diagnostics flag"
+            pio run -e esp32-s3-devkitc-1 --project-option="build_flags +=' -DENABLE_DIAG_OVERLAY'"
+          else
+            pio run -e esp32-s3-devkitc-1
+          fi
 
       - name: Compile tests (no upload)
         if: success()
@@ -43,7 +53,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          name: firmware-${{ matrix.variant }}
           path: my-arduino-project/.pio/build/esp32-s3-devkitc-1/firmware.bin
 
   clang-format:

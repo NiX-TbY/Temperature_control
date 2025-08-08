@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build (Release Tag)
+        working-directory: my-arduino-project
+        run: pio run -e esp32-s3-devkitc-1
+
+      - name: Capture Version
+        id: meta
+        run: |
+          DESC=$(git describe --tags --long --dirty --always || echo unknown)
+          echo "desc=$DESC" >> $GITHUB_OUTPUT
+          echo "short=${DESC%%-*}" >> $GITHUB_OUTPUT
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ steps.meta.outputs.desc }}
+          path: my-arduino-project/.pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.meta.outputs.desc }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            Automated release for ${{ steps.meta.outputs.desc }}.
+            - Firmware: firmware.bin
+            - Version short: ${{ steps.meta.outputs.short }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
