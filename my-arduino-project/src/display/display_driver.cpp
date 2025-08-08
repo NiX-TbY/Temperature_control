@@ -1,6 +1,9 @@
 #include "display/display_driver.h"
 #include "hal/ch422g.h"
 #include "display/gt911.h"
+#ifndef BACKLIGHT_FALLBACK_PIN
+#define BACKLIGHT_FALLBACK_PIN DISPLAY_DE_PIN // Override in build_flags with -DBACKLIGHT_FALLBACK_PIN=<gpio>
+#endif
 
 // Global display instance
 DisplayDriver display;
@@ -105,8 +108,9 @@ bool DisplayDriver::initI2C() {
         ch422g.setBacklight(100);
     } else {
         DEBUG_PRINTLN("WARNING: CH422G expander not detected");
-    // Prepare PWM backlight fallback if dedicated GPIO available.
-    ledcAttachPin(DISPLAY_DE_PIN, DISPLAY_BL_PWM_CHANNEL); // NOTE: placeholder pin mapping – adjust to real BL pin if differs from DE
+    // Prepare PWM backlight fallback if expander missing. Using BACKLIGHT_FALLBACK_PIN (default DE) – recommend overriding.
+    pinMode(BACKLIGHT_FALLBACK_PIN, OUTPUT);
+    ledcAttachPin(BACKLIGHT_FALLBACK_PIN, DISPLAY_BL_PWM_CHANNEL);
     ledcSetup(DISPLAY_BL_PWM_CHANNEL, DISPLAY_BL_PWM_FREQ, DISPLAY_BL_PWM_RESOLUTION);
     ledcWrite(DISPLAY_BL_PWM_CHANNEL, 255);
     }
@@ -226,8 +230,17 @@ void DisplayDriver::setBrightness(uint8_t brightness) {
     if (ch422g.isPresent()) {
         ch422g.setBacklight(brightness);
     } else {
-        uint8_t duty = map(brightness, 0, 100, 0, 255);
-        ledcWrite(DISPLAY_BL_PWM_CHANNEL, duty);
+        // Simple ramp for stability (avoid sudden inrush to LED backlight)
+        static uint8_t lastDuty = 255;
+        uint8_t target = map(brightness, 0, 100, 0, 255);
+        int step = (target > lastDuty) ? 4 : -4;
+        while (lastDuty != target) {
+            int next = (int)lastDuty + step;
+            if ((step > 0 && next > target) || (step < 0 && next < target)) next = target;
+            lastDuty = (uint8_t)next;
+            ledcWrite(DISPLAY_BL_PWM_CHANNEL, lastDuty);
+            delay(1); // short micro-ramp; negligible impact, smooths transitions
+        }
     }
 }
 

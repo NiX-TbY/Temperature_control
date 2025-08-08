@@ -9,6 +9,8 @@
 #include <SD.h>
 #include <SPI.h>
 #endif
+#include "display/display_pins.h"
+#include "utils/pin_validation.h"
 
 void SystemUtils::initSerial() {
     Serial.begin(115200);
@@ -322,6 +324,17 @@ void SystemUtils::runSelfTest() {
     Serial.printf("Firmware: %s (%s) build %lu\n", FW_VERSION_GIT, FW_VERSION_SHORT, (unsigned long)FW_BUILD_UNIX);
     Serial.printf("Heap: %lu, PSRAM: %lu\n", (unsigned long)getFreeHeap(), (unsigned long)getFreePSRAM());
     Serial.printf("Reset reason: %s\n", getResetReason().c_str());
+    PinValidation::run();
+    uint32_t pinFaults = PinValidation::getFaultMask();
+    Serial.printf("Pin validation mask: 0x%08lX\n", (unsigned long)pinFaults);
+    #ifdef ENABLE_RGB_PANEL
+    Serial.println("-- RGB Mapping (B3..B7,G2..G7,R3..R7 order) --");
+    Serial.printf("B3=%d B4=%d B5=%d B6=%d B7=%d\n", LCD_PIN_B3, LCD_PIN_B4, LCD_PIN_B5, LCD_PIN_B6, LCD_PIN_B7);
+    Serial.printf("G2=%d G3=%d G4=%d G5=%d G6=%d G7=%d\n", LCD_PIN_G2, LCD_PIN_G3, LCD_PIN_G4, LCD_PIN_G5, LCD_PIN_G6, LCD_PIN_G7);
+    Serial.printf("R3=%d R4=%d R5=%d R6=%d R7=%d\n", LCD_PIN_R3, LCD_PIN_R4, LCD_PIN_R5, LCD_PIN_R6, LCD_PIN_R7);
+    Serial.printf("CTL: DE=%d VSYNC=%d HSYNC=%d PCLK=%d\n", DISPLAY_DE_PIN, DISPLAY_VSYNC_PIN, DISPLAY_HSYNC_PIN, DISPLAY_PCLK_PIN);
+    Serial.println("Polarity (from DEFAULT_RGB_TIMING / ST7262 HDPOL/VDPOL assumptions): HSYNC active low, VSYNC active low, DE active high, PCLK on rising edge");
+    #endif
 #ifdef ENABLE_SD_LOGGING
     bool sd = initSDCardWithRetry(3, SD_INIT_RETRY_BACKOFF_MS);
     Serial.printf("SD card: %s\n", sd ? "OK" : "FAIL");

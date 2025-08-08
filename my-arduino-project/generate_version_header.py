@@ -9,8 +9,17 @@ Outputs include/version.h with:
 import subprocess
 import pathlib
 import time
+import os, sys
 
-ROOT = pathlib.Path(__file__).resolve().parent
+try:
+    ROOT = pathlib.Path(__file__).resolve().parent
+except NameError:
+    # Fallback when __file__ not provided by execution context (e.g. PlatformIO SCons quirk)
+    # Use first argv element or CWD as best-effort root.
+    if len(sys.argv) and sys.argv[0]:
+        ROOT = pathlib.Path(sys.argv[0]).resolve().parent
+    else:
+        ROOT = pathlib.Path(os.getcwd())
 INC = ROOT / 'include'
 OUT = INC / 'version.h'
 
@@ -28,6 +37,7 @@ def main():
     short = desc.split('-')[0] if '-' in desc else desc
     build_unix = int(time.time())
     content = f"// Auto-generated. Do not edit.\n#pragma once\n#define FW_VERSION_GIT   \"{desc}\"\n#define FW_VERSION_SHORT \"{short}\"\n#define FW_BUILD_UNIX    {build_unix}UL\n"
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     if OUT.exists():
         old = OUT.read_text()
         if old == content:

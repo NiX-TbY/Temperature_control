@@ -33,6 +33,11 @@
 #define I2C_SCL_PIN 9
 #define I2C_FREQ 400000
 
+// RTC Interrupt (PCF85063A) – captured for future wake/events & precise timekeeping
+#ifndef RTC_INT_PIN
+#define RTC_INT_PIN 6
+#endif
+
 // I2C Device Addresses
 #define CH422G_ADDRESS 0x71    // I/O Expander (controls display reset & backlight)
 #define GT911_ADDRESS_1 0x5D    // Touch controller primary address
