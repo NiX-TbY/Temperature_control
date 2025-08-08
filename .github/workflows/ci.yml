@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+            path: |
+              ~/.platformio
+            key: pio-${{ runner.os }}-${{ hashFiles('**/platformio.ini') }}
+            restore-keys: |
+              pio-${{ runner.os }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build (ESP32-S3)
+        working-directory: my-arduino-project
+        run: pio run -e esp32-s3-devkitc-1
+
+      - name: Compile tests (no upload)
+        if: success()
+        working-directory: my-arduino-project
+        run: pio test -e esp32-s3-devkitc-1 --without-upload --skip-packages || true
+
+      - name: Artifact firmware
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: my-arduino-project/.pio/build/esp32-s3-devkitc-1/firmware.bin
+
+  clang-format:
+    if: false # placeholder job for future formatting/lint
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Reserved for future static analysis / formatting checks"
