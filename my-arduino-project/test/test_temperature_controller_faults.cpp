@@ -3,6 +3,9 @@
 #include "types/types.h"
 #include "config/config.h"
 
+// Include implementation files directly for test build to avoid build_src_filter omissions
+#include "../src/controllers/temperature_controller.cpp"
+
 static SensorData makeSensor(float t, bool valid=true) {
     SensorData s{}; s.temperature = t; s.valid = valid; s.humidity = 0; s.timestamp = millis(); s.lastValidReading = s.timestamp; s.sensorId = 0; s.address = ""; return s;
 }

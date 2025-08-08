@@ -2,6 +2,9 @@
 #include <unity.h>
 #include "utils/system_utils.h"
 
+// Pull in implementation to satisfy linker in isolated test build
+#include "../src/utils/system_utils.cpp"
+
 void test_logging_constants_present() {
 #ifdef ENABLE_SD_LOGGING
     TEST_ASSERT_TRUE(LOG_FILE_MAX_SIZE > 0);
