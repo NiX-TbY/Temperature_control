@@ -32,3 +32,17 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# PlatformIO / Arduino build artifacts
+.pio/
+cmake-build-*/
+**/build-artifacts/
+*.elf
+*.bin
+*.map
+
+# VSCode local
+.vscode/
+
+# SD card dumps or log outputs (optional pattern)
+logs/

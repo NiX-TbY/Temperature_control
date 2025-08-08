@@ -1,239 +1,204 @@
-#include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <esp_task_wdt.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+// Core orchestrated main: sets up tasks splitting UI (core0) and logic (core1)
 #include <lvgl.h>
-
-#include "config/config.h"
-#include "types/types.h"
-#include "controllers/temperature_controller.h"
-#include "sensors/temperature_sensor.h"
 #include "display/display_driver.h"
-#include "display/ui_screens.h"
+#include "rtos/task_config.h"
 #include "utils/system_utils.h"
+#include "config/feature_flags.h"
+#ifdef ENABLE_DS18B20
+#include "sensors/temperature_sensor.h"
+#endif
+#ifdef ENABLE_RELAYS
+#include "controllers/relay_controller.h"
+#endif
+#ifdef ENABLE_RTC
+#include "sensors/rtc_clock.h"
+#endif
+#ifdef ENABLE_SD_LOGGING
+bool startLoggingTask();
+#endif
+
+extern DisplayDriver display;
+#ifdef ENABLE_DS18B20
+extern TemperatureSensor tempSensor;
+#endif
+#ifdef ENABLE_RELAYS
+extern RelayController relays;
+#endif
+#ifdef ENABLE_RTC
+extern RTCClock rtcClock;
+#endif
 
 // Task handles
-TaskHandle_t displayTaskHandle = nullptr;
-TaskHandle_t touchTaskHandle = nullptr;
-TaskHandle_t lvglTaskHandle = nullptr;
-TaskHandle_t controlTaskHandle = nullptr;
-TaskHandle_t sensorTaskHandle = nullptr;
-TaskHandle_t loggingTaskHandle = nullptr;
+static TaskHandle_t lvglTaskHandle = nullptr;
+static TaskHandle_t controlTaskHandle = nullptr;
+static TaskHandle_t sensorTaskHandle = nullptr;
+#ifdef ENABLE_RTC
+static TaskHandle_t timeTaskHandle = nullptr;
+static char gTimeLabel[25];
+#endif
 
-// Mutex for shared data access
-SemaphoreHandle_t dataMutex = nullptr;
+// Simple shared data placeholder (put in internal RAM for faster control access)
+struct __attribute__((aligned(4))) SharedState {
+    float currentTemp;
+    float targetTemp;
+    uint32_t lastSensorUpdate;
+};
+static SharedState gState; // BSS -> internal RAM
 
-// System data shared between tasks
-SystemData systemData;
+// LVGL / Display task (Core 0) – high priority
+static void lvglTask(void *arg) {
+    TickType_t last = xTaskGetTickCount();
+    while (true) {
+        display.update();
+#ifdef ENABLE_RTC
+        // Update a small on-screen clock if root label exists (simple demo)
+        // (In production integrate with proper UI screen abstraction.)
+        static lv_obj_t * clkLabel = nullptr;
+        if (!clkLabel) {
+            clkLabel = lv_label_create(lv_scr_act());
+            lv_obj_align(clkLabel, LV_ALIGN_TOP_RIGHT, -4, 4);
+        }
+        lv_label_set_text(clkLabel, gTimeLabel);
+#endif
+        vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_LVGL));
+    }
+}
 
-// Task functions
-void displayTask(void *pvParameters);
-void touchTask(void *pvParameters);
-void lvglTask(void *pvParameters);
-void controlTask(void *pvParameters);
-void sensorTask(void *pvParameters);
-void loggingTask(void *pvParameters);
+// Control task (Core 1) – placeholder control loop
+static void controlTask(void *arg) {
+    TickType_t last = xTaskGetTickCount();
+    while (true) {
+        // Target temperature enforcement placeholder
+        if (gState.targetTemp != -18.0f) gState.targetTemp = -18.0f;
+#ifdef ENABLE_RELAYS
+        // Example: if current temp > target + hysteresis -> cooling (compressor ON)
+        float hysteresis = 1.0f;
+        bool needCooling = (gState.currentTemp > (gState.targetTemp + hysteresis));
+        relays.setRelay(RELAY_COMPRESSOR, needCooling);
+        // Example hotgas / heater placeholder (off)
+        relays.setRelay(RELAY_HOTGAS, false);
+        relays.setRelay(RELAY_ELECTRIC_HEATER, false);
+        // Fans follow compressor for now
+        relays.setRelay(RELAY_FAN_MAIN, needCooling);
+#endif
+        vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_CONTROL));
+    }
+}
 
-// Function declarations
-void setupButtons();
-void initWiFi();
-void printSystemStatus(const SensorData& sensor);
+// Sensor task (Core 1)
+static void sensorTask(void *arg) {
+    TickType_t last = xTaskGetTickCount();
+#ifdef ENABLE_DS18B20
+    // Sensors initialized in setup
+#endif
+    while (true) {
+#ifdef ENABLE_DS18B20
+        tempSensor.update();
+        if (tempSensor.getSensorCount() > 0) {
+            auto d = tempSensor.getSensorData(0); // first sensor as control reference
+            if (d.valid) {
+                gState.currentTemp = d.temperature;
+                gState.lastSensorUpdate = millis();
+            }
+        }
+#else
+        // Simulated temperature if sensors disabled
+        static float temp = -15.0f;
+        temp -= 0.1f; if (temp < -19.0f) temp = -15.0f;
+        gState.currentTemp = temp;
+        gState.lastSensorUpdate = millis();
+#endif
+        vTaskDelayUntil(&last, pdMS_TO_TICKS(PERIOD_SENSOR));
+    }
+}
+
+#ifdef ENABLE_RTC
+// Time task (Core 0) – low frequency, keeps cached label
+static void timeTask(void *arg) {
+    TickType_t last = xTaskGetTickCount();
+    while (true) {
+        strcpy(gTimeLabel, rtcClock.isoTimestamp().c_str());
+        vTaskDelayUntil(&last, pdMS_TO_TICKS(1000));
+    }
+}
+#endif
 
 void setup() {
-    // Initialize serial for debugging
     Serial.begin(115200);
-    delay(500);
-    Serial.println("\n=== ESP32-S3 Temperature Control System ===");
-    
-    // Initialize mutex for shared data
-    dataMutex = xSemaphoreCreateMutex();
-    
-    // Initialize system data structure
-    memset(&systemData, 0, sizeof(SystemData));
-    systemData.timeString = "2025-08-07 06:15:12";
-    systemData.activeSensors = 0;
-    systemData.minTemp = -30.0;
-    systemData.maxTemp = 10.0;
-    
-    // Initialize display
+    delay(200);
+    Serial.println("\n=== Dual-Core UI/Logic Bring-up ===");
+
+#ifdef ENABLE_RELAYS
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ);
+    relays.begin(Wire);
+    relays.allOff();
+#else
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ);
+#endif
+
+#ifdef ENABLE_RTC
+    if (rtcClock.begin(Wire)) {
+        Serial.println("RTC detected and initialized");
+    } else {
+        Serial.println("RTC not detected");
+    }
+    strcpy(gTimeLabel, "1970-01-01T00:00:00Z");
+#endif
+
+#ifdef ENABLE_DS18B20
+    if (tempSensor.init()) {
+        Serial.printf("DS18B20 sensors active: %d\n", tempSensor.getSensorCount());
+    } else {
+        Serial.println("No DS18B20 sensors detected");
+    }
+#endif
+
+    // Init display + LVGL (allocates large buffers in PSRAM)
     if (!display.init()) {
-        Serial.println("ERROR: Display initialization failed!");
-        while (1) { delay(1000); }
+        Serial.println("Display init FAILED");
+    } else {
+        Serial.println("Display init OK");
+        lv_obj_t * label = lv_label_create(lv_scr_act());
+        lv_label_set_text(label, "Dual-Core Split Running");
+        lv_obj_center(label);
     }
-    
-    // Initialize temperature controller
-    if (!controller.init()) {
-        Serial.println("ERROR: Temperature controller initialization failed!");
+
+    // Initialize shared state
+    gState.currentTemp = -16.0f;
+    gState.targetTemp = -18.0f;
+    gState.lastSensorUpdate = millis();
+
+    // Create tasks
+    BaseType_t ok;
+    ok = xTaskCreatePinnedToCore(lvglTask, "lvgl", STACK_LVGL_TASK, nullptr, PRIO_LVGL, &lvglTaskHandle, CORE_UI);
+    if (ok != pdPASS) Serial.println("Failed to create lvglTask");
+
+    ok = xTaskCreatePinnedToCore(controlTask, "control", STACK_CONTROL_TASK, nullptr, PRIO_CONTROL, &controlTaskHandle, CORE_APP);
+    if (ok != pdPASS) Serial.println("Failed to create controlTask");
+
+    ok = xTaskCreatePinnedToCore(sensorTask, "sensors", STACK_SENSOR_TASK, nullptr, PRIO_SENSOR, &sensorTaskHandle, CORE_APP);
+    if (ok != pdPASS) Serial.println("Failed to create sensorTask");
+
+#ifdef ENABLE_RTC
+    ok = xTaskCreatePinnedToCore(timeTask, "time", 2048, nullptr, tskIDLE_PRIORITY + 1, &timeTaskHandle, CORE_UI);
+    if (ok != pdPASS) Serial.println("Failed to create timeTask");
+#endif
+
+#ifdef ENABLE_SD_LOGGING
+    if (startLoggingTask()) {
+        Serial.println("Logging task started");
+    } else {
+        Serial.println("Logging task NOT started (SD init failed)");
     }
-    
-    // Initialize temperature sensors
-    if (!tempSensor.init()) {
-        Serial.println("WARNING: Temperature sensor initialization failed!");
-    }
-    
-    // Initialize UI components
-    if (!ui.init()) {
-        Serial.println("ERROR: UI initialization failed!");
-        while (1) { delay(1000); }
-    }
-    
-    // Create UI task (Core 0, high priority)
-    xTaskCreatePinnedToCore(
-        displayTask,
-        "displayTask",
-        DISPLAY_TASK_STACK,
-        nullptr,
-        DISPLAY_TASK_PRIORITY,
-        &displayTaskHandle,
-        0
-    );
-    
-    // Create touch task (Core 0, high priority)
-    xTaskCreatePinnedToCore(
-        touchTask,
-        "touchTask",
-        TOUCH_TASK_STACK,
-        nullptr,
-        TOUCH_TASK_PRIORITY,
-        &touchTaskHandle,
-        0
-    );
-    
-    // Create LVGL task (Core 0, high priority)
-    xTaskCreatePinnedToCore(
-        lvglTask,
-        "lvglTask",
-        LVGL_TASK_STACK,
-        nullptr,
-        LVGL_TASK_PRIORITY,
-        &lvglTaskHandle,
-        0
-    );
-    
-    // Create control task (Core 1, medium priority)
-    xTaskCreatePinnedToCore(
-        controlTask,
-        "controlTask",
-        CONTROL_TASK_STACK,
-        nullptr,
-        CONTROL_TASK_PRIORITY,
-        &controlTaskHandle,
-        1
-    );
-    
-    // Create sensor task (Core 1, medium priority)
-    xTaskCreatePinnedToCore(
-        sensorTask,
-        "sensorTask",
-        SENSOR_TASK_STACK,
-        nullptr,
-        SENSOR_TASK_PRIORITY,
-        &sensorTaskHandle,
-        1
-    );
-    
-    // Create logging task (Core 1, low priority)
-    xTaskCreatePinnedToCore(
-        loggingTask,
-        "loggingTask",
-        LOGGING_TASK_STACK,
-        nullptr,
-        LOGGING_TASK_PRIORITY,
-        &loggingTaskHandle,
-        1
-    );
-    
-    Serial.println("System initialization complete");
+#endif
+
+    // Buzzer pin (direct GPIO on Waveshare board)
+#ifdef BUZZER_PIN
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW); // off
+#endif
 }
 
 void loop() {
-    // Arduino loop not used with FreeRTOS tasks
-    delay(1000);
-}
-
-// Display task - handles display updates
-void displayTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(10);
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    while (true) {
-        display.update();
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-// Touch task - handles touch input
-void touchTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(20);
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    while (true) {
-        // Touch handling is done in LVGL callbacks
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-// LVGL task - handles UI updates
-void lvglTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(50); // 20Hz UI refresh
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    while (true) {
-        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            // Update UI with latest system data
-            ui.update(systemData);
-            xSemaphoreGive(dataMutex);
-        }
-        
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-// Control task - implements temperature control logic
-void controlTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1Hz control loop
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    while (true) {
-        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // Basic temperature control logic
-            // TODO: Implement full control logic
-            xSemaphoreGive(dataMutex);
-        }
-        
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-// Sensor task - reads temperature sensors
-void sensorTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(1000); // 1Hz sensor reads
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    while (true) {
-        // Basic sensor reading
-        if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // Update sensor count
-            systemData.activeSensors = tempSensor.getSensorCount();
-            // TODO: Read actual sensor data
-            xSemaphoreGive(dataMutex);
-        }
-        
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-    }
-}
-
-// Logging task - simplified placeholder
-void loggingTask(void *pvParameters) {
-    const TickType_t xFrequency = pdMS_TO_TICKS(5000); // Check every 5 seconds
-    
-    while (true) {
-        // Simplified logging - just update system status
-        systemData.lastUpdateTime = millis();
-        Serial.println("Logging task running...");
-        
-        vTaskDelay(xFrequency);
-    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }

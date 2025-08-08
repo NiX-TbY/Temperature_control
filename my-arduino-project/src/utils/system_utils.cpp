@@ -4,6 +4,10 @@
 #include <esp_sleep.h>
 #include <esp_chip_info.h>
 #include <esp_spi_flash.h>
+#ifdef ENABLE_SD_LOGGING
+#include <SD.h>
+#include <SPI.h>
+#endif
 
 void SystemUtils::initSerial() {
     Serial.begin(115200);
@@ -145,24 +149,132 @@ String SystemUtils::formatTemperature(float temp, bool includeUnit) {
 }
 
 bool SystemUtils::initSDCard() {
-    // SD card initialization would be implemented here
-    // Uses I/O expander to control SD_CS pin
+#ifdef ENABLE_SD_LOGGING
+    static bool initialized = false;
+    if (initialized) return true;
+    // Assumption: standard SPI SD with default VSPI pins; CS pin can be overridden by build flag SD_CS_PIN
+#ifndef SD_CS_PIN
+#define SD_CS_PIN 10
+#endif
+    if (!SD.begin(SD_CS_PIN)) {
+        Serial.println("[SD] Card mount failed");
+        return false;
+    }
+    uint32_t cardSizeMB = SD.cardSize() / (1024 * 1024);
+    Serial.printf("[SD] Mounted. Size: %u MB\n", cardSizeMB);
+    // Create logs directory if not exists
+    if (!SD.exists("/logs")) {
+        SD.mkdir("/logs");
+    }
+    initialized = true;
     return true;
+#else
+    return false; // disabled
+#endif
 }
 
 bool SystemUtils::logData(const SystemData& data) {
-    // Implement SD card logging here
+#ifdef ENABLE_SD_LOGGING
+    if (!initSDCard()) return false;
+    // Build date-based filename: /logs/yyyymmdd.csv (fallback if no date)
+    char fname[32];
+    if (data.dateString.length() >= 10) { // Expecting YYYY-MM-DD
+        char y[5], m[3], d[3];
+        strncpy(y, data.dateString.c_str(), 4); y[4]='\0';
+        strncpy(m, data.dateString.c_str()+5, 2); m[2]='\0';
+        strncpy(d, data.dateString.c_str()+8, 2); d[2]='\0';
+        snprintf(fname, sizeof(fname), "/logs/%s%s%s.csv", y, m, d);
+    } else {
+        snprintf(fname, sizeof(fname), "/logs/log.csv");
+    }
+
+    bool newFile = !SD.exists(fname);
+    File f = SD.open(fname, FILE_APPEND);
+    if (!f) {
+        Serial.printf("[SD] Open failed: %s\n", fname);
+        return false;
+    }
+
+    // Rotate if oversized
+    if (!newFile && f.size() > LOG_FILE_MAX_SIZE) {
+        f.close();
+        // Create incremented suffix
+        for (int i = 1; i < 100; ++i) {
+            char rotated[40];
+            snprintf(rotated, sizeof(rotated), "%s.%02d", fname, i);
+            if (!SD.exists(rotated)) {
+                SD.rename(fname, rotated);
+                Serial.printf("[SD] Rotated %s -> %s\n", fname, rotated);
+                newFile = true; // ensures header on fresh file
+                break;
+            }
+        }
+        f = SD.open(fname, FILE_APPEND);
+        if (!f) {
+            Serial.printf("[SD] Re-open failed after rotation: %s\n", fname);
+            return false;
+        }
+    }
+
+    if (newFile) {
+        f.println("timestamp,date,time,activeSensors,s0Temp,s1Temp,s2Temp,s3Temp,curTemp,avgTemp,targetTemp,alarm,faultMask,freeHeap,freePSRAM");
+    }
+
+    auto ts = data.timeString.length() ? data.timeString : String(millis());
+    auto dateStr = data.dateString.length() ? data.dateString : String("1970-01-01");
+    String timePart = "00:00:00";
+    if (data.timeString.length() >= 19) { // ISO e.g. 2025-08-08T12:34:56Z
+        timePart = data.timeString.substring(11, 19);
+    }
+
+    char line[256];
+    float sTemps[4] = {NAN,NAN,NAN,NAN};
+    for (int i=0;i<4;i++) if (data.sensors[i].valid) sTemps[i] = data.sensors[i].temperature;
+    snprintf(line, sizeof(line), "%s,%s,%s,%u,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,0x%08lX,%lu,%lu",
+             ts.c_str(), dateStr.c_str(), timePart.c_str(), data.activeSensors,
+             sTemps[0], sTemps[1], sTemps[2], sTemps[3],
+             data.control.currentTemp, data.control.averageTemp, data.config.targetTemp,
+             data.control.alarmActive ? 1 : 0, data.control.faultMask,
+             (unsigned long)getFreeHeap(), (unsigned long)getFreePSRAM());
+    f.println(line);
+    f.flush(); // flush returns void in ESP32 SD
+    f.close();
     return true;
+#else
+    (void)data;
+    return false;
+#endif
 }
 
-bool SystemUtils::readConfig(SystemConfig& config) {
-    // Read configuration from storage
+bool SystemUtils::logEventRecord(unsigned long ts, uint16_t code, uint32_t faultMask) {
+#ifdef ENABLE_SD_LOGGING
+    if (!initSDCard()) return false;
+    // Derive date for filename from RTC if available via global helper (not passed) -> fallback single file
+    char fname[40] = {0};
+    // Use a simple events.csv if no RTC date (could be extended to pass date)
+    snprintf(fname, sizeof(fname), "/logs/events.csv");
+    bool newFile = !SD.exists(fname);
+    File f = SD.open(fname, FILE_APPEND);
+    if (!f) return false;
+    if (newFile) f.println("millis,code,faultMask");
+    char line[64];
+    snprintf(line, sizeof(line), "%lu,0x%04X,0x%08lX", ts, code, (unsigned long)faultMask);
+    f.println(line);
+    f.flush();
+    f.close();
     return true;
+#else
+    (void)ts; (void)code; (void)faultMask; return false;
+#endif
 }
 
-bool SystemUtils::writeConfig(const SystemConfig& config) {
-    // Write configuration to storage
+bool SystemUtils::flushLogs() {
+#ifdef ENABLE_SD_LOGGING
+    // Using unbuffered appends; nothing to flush.
     return true;
+#else
+    return false;
+#endif
 }
 
 void SystemUtils::watchdogReset() {
